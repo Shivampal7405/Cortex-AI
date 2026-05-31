@@ -1,0 +1,1 @@
+import{j as t,c as e,R as s}from"./client-Bli3Ac1C.js";function n(){return t.jsxs("div",{className:"p-8",children:[t.jsx("h1",{className:"text-2xl font-bold",children:"Cortex Settings"}),t.jsx("p",{className:"text-gray-600 mt-4",children:"Settings coming soon."})]})}e.createRoot(document.getElementById("root")).render(t.jsx(s.StrictMode,{children:t.jsx(n,{})}));
