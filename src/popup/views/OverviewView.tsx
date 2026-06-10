@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { ProviderCard } from '../components/ProviderCard';
 import type { ProviderState, ClaudeUsage, ChatGPTUsage, GeminiUsage, GrokUsage } from '../../shared/types';
 
+type AnyProviderState = ProviderState<ClaudeUsage | ChatGPTUsage | GeminiUsage | GrokUsage>
+
 export function OverviewView() {
-  const [states, setStates] = useState<Record<string, ProviderState<any>>>({});
+  const [states, setStates] = useState<Record<string, AnyProviderState>>({});
 
   useEffect(() => {
     // Initial load

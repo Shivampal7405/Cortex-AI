@@ -3,7 +3,7 @@
   "name": "Cortex — AI Co-pilot",
   "version": "1.0.0",
   "description": "Live token tracking, model switching, and shared memory inside Claude, ChatGPT, Gemini, and Grok.",
-  "permissions": ["storage", "alarms", "notifications", "tabs", "scripting"],
+  "permissions": ["storage", "alarms", "notifications", "tabs", "scripting", "cookies"],
   "host_permissions": [
     "https://claude.ai/*",
     "https://chatgpt.com/*",
@@ -24,6 +24,12 @@
       "128": "icons/icon-128.png"
     }
   },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+C" },
+      "description": "Open Cortex"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["https://claude.ai/*"],
@@ -33,20 +39,24 @@
     },
     {
       "matches": ["https://chatgpt.com/*"],
-      "js": ["agents/chatgpt/chatgpt.content.js"],
-      "run_at": "document_start",
+      "js": ["agents/chatgpt/chatgpt.tracker.js"],
+      "run_at": "document_idle",
       "all_frames": false
     },
     {
       "matches": ["https://gemini.google.com/*"],
-      "js": ["agents/gemini/gemini.content.js"],
-      "run_at": "document_start",
+      "js": ["agents/gemini/gemini.tracker.js"],
+      "run_at": "document_idle",
       "all_frames": false
     },
     {
-      "matches": ["https://x.com/*"],
-      "js": ["agents/grok/grok.content.js"],
-      "run_at": "document_start",
+      "matches": [
+        "https://x.com/i/grok*",
+        "https://x.com/grok*",
+        "https://grok.com/*"
+      ],
+      "js": ["agents/grok/grok.tracker.js"],
+      "run_at": "document_idle",
       "all_frames": false
     }
   ],

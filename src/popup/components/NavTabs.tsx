@@ -1,13 +1,15 @@
-type Tab = 'overview' | 'history' | 'alerts';
+type Tab = 'overview' | 'memory' | 'history' | 'alerts';
 
 interface NavTabsProps {
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
+  hasNewFacts?: boolean;
 }
 
-export function NavTabs({ activeTab, onTabChange }: NavTabsProps) {
+export function NavTabs({ activeTab, onTabChange, hasNewFacts }: NavTabsProps) {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
+    { id: 'memory', label: 'Memory' },
     { id: 'history', label: 'History' },
     { id: 'alerts', label: 'Alerts' },
   ];
@@ -20,13 +22,16 @@ export function NavTabs({ activeTab, onTabChange }: NavTabsProps) {
           <button
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
-            className={`flex-1 flex items-center justify-center text-sm font-medium transition-colors border-b-2 ${
+            className={`relative flex-1 flex items-center justify-center text-sm font-medium transition-colors border-b-2 ${
               isActive
                 ? 'border-purple-600 text-purple-600 dark:text-purple-400'
                 : 'border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'
             }`}
           >
             {tab.label}
+            {tab.id === 'memory' && hasNewFacts && (
+              <span className="absolute top-2 right-4 w-1.5 h-1.5 bg-purple-500 rounded-full"></span>
+            )}
           </button>
         );
       })}

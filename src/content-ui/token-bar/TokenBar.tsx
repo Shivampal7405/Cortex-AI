@@ -9,6 +9,7 @@
 import React, { useEffect, useState } from 'react'
 import type { Provider, TokenBarState } from '../../shared/types'
 import { PROVIDER_COLORS } from '../../shared/constants'
+import { ModelSwitcher } from './ModelSwitcher'
 
 interface TokenBarProps {
   provider: Provider
@@ -49,7 +50,7 @@ export function TokenBar({ provider }: TokenBarProps): React.ReactElement {
     return () => chrome.runtime.onMessage.removeListener(handler)
   }, [provider])
 
-  if (!visible || provider !== 'claude') return null
+  if (!visible || provider !== 'claude') return <></>
 
   const color = PROVIDER_COLORS[provider] ?? '#7C3AED'
   const pct = state.context_pct
@@ -79,6 +80,10 @@ export function TokenBar({ provider }: TokenBarProps): React.ReactElement {
               <div className="h-full rounded-full transition-all duration-300" style={{ width: `${pct7day}%`, backgroundColor: color7day }} />
             </div>
           </div>
+
+          <div className="w-px h-3 bg-black/15 dark:bg-white/15 mx-1" />
+
+          <ModelSwitcher provider={provider} currentModel={state.model} />
 
           <div className="w-px h-3 bg-black/15 dark:bg-white/15 mx-1" />
         </>

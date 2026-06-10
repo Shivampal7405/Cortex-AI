@@ -11,6 +11,7 @@
 import { computeCost, computeContextPct } from '../shared/tokenizer'
 import { MODEL_CONTEXT_LIMITS } from '../shared/constants'
 import type { ProviderState, ClaudeUsage, TokenBarState } from '../shared/types'
+import { recordSnapshot } from './history.recorder'
 
 export async function handleUsageUpdate(
   provider: string,
@@ -29,6 +30,7 @@ export async function handleUsageUpdate(
     total_tokens?: number
     context_limit?: number
     context_pct?: number
+    model?: string
     source: string
   }
 
@@ -44,8 +46,8 @@ export async function handleUsageUpdate(
     pct_7day:      raw.pct_7day,
     reset_5hr_at:  raw.reset_5hr_at,
     reset_7day_at: raw.reset_7day_at,
-    plan: 'pro',
-    model: 'claude-3-opus', // Defaults for now
+    plan:  'pro',
+    model: raw.model ?? 'claude-sonnet-4-5', // from DOM reader in content script
   }
 
   const state: ProviderState<ClaudeUsage> = {
@@ -56,6 +58,18 @@ export async function handleUsageUpdate(
 
   // Persist to storage
   await chrome.storage.local.set({ 'provider:claude': state })
+
+  // Record snapshot for heatmap history
+  const today = new Date().toISOString().slice(0, 10)
+  recordSnapshot({
+    id:        `claude_${Date.now()}`,
+    provider:  'claude',
+    pct:       claudeUsage.pct_5hr,
+    tokens:    claudeUsage.tokens_5hr,
+    cost_usd:  0,
+    date:      today,
+    timestamp: Date.now(),
+  }).catch(err => console.warn('[Cortex] recordSnapshot failed:', err))
 
   // Fetch existing TokenBarState to preserve total_tokens if this is just an SSE update
   const existingRes = await chrome.storage.local.get('tokenBarState:claude')
@@ -116,7 +130,7 @@ async function handleSimpleUpdate(
   const urlMap: Record<string, string> = {
     chatgpt: 'https://chatgpt.com/*',
     gemini:  'https://gemini.google.com/*',
-    grok:    'https://x.com/*',
+    grok:    'https://grok.com/*',
   }
 
   // Persist to storage for newly mounted UI elements

@@ -16,6 +16,12 @@
       "128": "icons/icon-128.png"
     }
   },
+  "commands": {
+    "_execute_browser_action": {
+      "suggested_key": { "default": "Alt+Shift+C" },
+      "description": "Open Cortex"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["https://claude.ai/*"],

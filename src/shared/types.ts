@@ -22,28 +22,27 @@ export interface ClaudeUsage {
 }
 
 export interface ChatGPTUsage {
-  plan: Plan;
-  tokens_today: number;
-  limit_today: number;
-  pct_today: number;
-  sessions_today: number;
+  plan: 'free' | 'plus' | 'pro' | 'team';
+  messages_used: number;
+  messages_cap: number;
+  pct_used: number;
+  reset_at: number; // unix ms
   model: string;
 }
 
 export interface GeminiUsage {
-  tier: 'free' | 'payg' | 'scale';
-  rpm_used: number;
-  rpm_limit: number;
-  tpd_used: number;
-  tpd_limit: number;
+  tier: 'standard' | 'advanced';
+  context_limit: number;
   model: string;
+  is_logged_in: boolean;
 }
 
 export interface GrokUsage {
-  plan: Plan;
-  tokens_used: number;
-  limit: number;
-  pct: number;
+  plan: 'free' | 'premium' | 'premium_plus';
+  messages_used: number;
+  messages_cap: number;
+  pct_used: number;
+  reset_at: number; // unix ms
   model: string;
 }
 
@@ -141,3 +140,10 @@ export type ExtensionMessage =
   | UsageUpdateMessage
   | TokenBarUpdateMessage
   | MemoryUpdateMessage;
+
+export interface AppState {
+  claude:   ProviderState<ClaudeUsage>
+  chatgpt:  ProviderState<ChatGPTUsage>
+  gemini:   ProviderState<GeminiUsage>
+  grok:     ProviderState<GrokUsage>
+}

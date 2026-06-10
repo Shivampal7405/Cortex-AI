@@ -6,7 +6,7 @@ export const storage = {
     return res[key] !== undefined ? (res[key] as T) : null;
   },
   
-  async set(key: string, value: any): Promise<void> {
+  async set(key: string, value: unknown): Promise<void> {
     await browser.storage.local.set({ [key]: value });
   },
 
