@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, existsSync } from 'fs'
+import { copyFileSync, mkdirSync, existsSync, readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
@@ -80,7 +80,8 @@ execSync(
 )
 
 // Create store-ready zip
-const version = '1.0.0'
+const pkgContent = readFileSync(resolve(rootDir, 'package.json'), 'utf-8')
+const version = JSON.parse(pkgContent).version
 const zipPath = resolve(rootDir, `cortex-${target}-v${version}.zip`)
 console.log(`Creating ${zipPath}...`)
 

@@ -5,10 +5,11 @@ import { OverviewView } from './views/OverviewView';
 import { HistoryView } from './views/HistoryView';
 import { AlertsView } from './views/AlertsView';
 import { MemoryView } from './views/MemoryView';
+import { PromptsView } from './views/PromptsView';
 import { OnboardingView } from './views/OnboardingView';
 
 export function Popup() {
-  const [activeTab,      setActiveTab]      = useState<'overview' | 'memory' | 'history' | 'alerts'>('overview');
+  const [activeTab,      setActiveTab]      = useState<'overview' | 'memory' | 'history' | 'alerts' | 'prompts'>('overview');
   const [isDarkMode,     setIsDarkMode]     = useState(false);
   const [hasNewFacts,    setHasNewFacts]    = useState(false);
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
@@ -54,6 +55,7 @@ export function Popup() {
         {activeTab === 'overview' && <OverviewView />}
         {activeTab === 'memory'   && <MemoryView />}
         {activeTab === 'history'  && <HistoryView />}
+        {activeTab === 'prompts'  && <PromptsView />}
         {activeTab === 'alerts'   && <AlertsView />}
       </main>
 

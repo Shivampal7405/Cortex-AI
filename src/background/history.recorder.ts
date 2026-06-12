@@ -35,6 +35,28 @@ async function getDB() {
 export async function recordSnapshot(snapshot: UsageSnapshot): Promise<void> {
   const db = await getDB()
   await db.put(STORE, snapshot)
+  await recordMonthlyCost(snapshot.cost_usd)
+}
+
+export async function recordMonthlyCost(costUsd: number): Promise<void> {
+  const now = new Date()
+  const currentMonth = `${now.getFullYear()}-${now.getMonth() + 1}`
+
+  const storage = await chrome.storage.local.get(['cortex_monthly_cost', 'cortex_current_month'])
+  
+  let currentCost = storage['cortex_monthly_cost'] as number || 0
+  const savedMonth = storage['cortex_current_month'] as string || ''
+
+  if (savedMonth !== currentMonth) {
+    currentCost = 0 // Reset for new month
+  }
+
+  currentCost += costUsd
+
+  await chrome.storage.local.set({
+    cortex_monthly_cost: currentCost,
+    cortex_current_month: currentMonth
+  })
 }
 
 export async function getHeatmapData(provider: string): Promise<Record<string, number>> {

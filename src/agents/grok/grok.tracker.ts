@@ -141,11 +141,25 @@ function extractGrokHistory(body: unknown): ChatMessage[] {
 async function scrapeHistoryFromDOM(): Promise<void> {
   const messages: ChatMessage[] = []
 
-  const allMessages = document.querySelectorAll(
-    '[data-testid="grok-message"],.grok-message,' +
-    '[class*="GrokMessage"],[class*="ChatMessage"],' +
-    '[class*="MessageBubble"],[class*="ConversationTurn"],article'
-  )
+  const GROK_SELECTORS = [
+    '[data-testid="grok-message"]',
+    '[class*="GrokMessage"]',
+    '[class*="ChatMessage"]',
+    '[class*="MessageBubble"]',
+    '[class*="ConversationTurn"]',
+    '[class*="TurnContainer"]',
+    'article',
+  ]
+
+  let allMessages: Element[] = []
+  for (const sel of GROK_SELECTORS) {
+    const found = document.querySelectorAll(sel)
+    if (found.length > 0) {
+      console.log('[Cortex:Grok] Selector hit:', sel, found.length)
+      allMessages = Array.from(found)
+      break
+    }
+  }
 
   for (const el of allMessages) {
     const isUser    = el.querySelector('[data-testid="user-message"]') !== null
@@ -184,6 +198,92 @@ function watchURLChanges(): void {
   }).observe(document.body, { childList: true, subtree: true })
 }
 
+async function checkAndHandleCompareMode(
+  responseText: string,
+  isDone: boolean
+): Promise<boolean> {
+  const storage = await chrome.storage.local.get('compare_mode')
+  const mode = storage['compare_mode'] as {
+    active: boolean
+    target: string
+  } | null
+
+  const thisProvider = 'grok'
+
+  if (!mode?.active || mode.target !== thisProvider) return false
+
+  chrome.runtime.sendMessage({
+    type:     'COMPARE_RESULT',
+    provider: thisProvider,
+    chunk:    responseText,
+    done:     isDone,
+  }).catch(() => {})
+
+  if (isDone) {
+    chrome.storage.local.remove('compare_mode')
+  }
+  return true
+}
+
+let compareObserver: MutationObserver | null = null
+
+function watchForCompareMode(): void {
+  setInterval(async () => {
+    const storage = await chrome.storage.local.get('compare_mode')
+    const mode = storage['compare_mode'] as { active: boolean; target: string } | null
+    if (mode?.active && mode.target === 'grok') {
+      if (!compareObserver) {
+        let lastSentLength = 0
+        let doneTimeout: ReturnType<typeof setTimeout> | null = null
+        
+        compareObserver = new MutationObserver(() => {
+          const GROK_SELECTORS = [
+            '[data-testid="grok-message"]',
+            '[class*="GrokMessage"]',
+            '[class*="ChatMessage"]',
+            '[class*="MessageBubble"]',
+            '[class*="ConversationTurn"]',
+            '[class*="TurnContainer"]',
+            'article',
+          ]
+          
+          let allMessages: Element[] = []
+          for (const sel of GROK_SELECTORS) {
+            const found = document.querySelectorAll(sel)
+            if (found.length > 0) {
+              allMessages = Array.from(found)
+              break
+            }
+          }
+          
+          // Get last message that is NOT user
+          const lastMsg = allMessages.reverse().find(el => {
+             return el.querySelector('[data-testid="user-message"]') === null &&
+                    !el.classList.contains('human')
+          })
+
+          if (lastMsg) {
+            const text = lastMsg.textContent || ''
+            const newText = text.slice(lastSentLength)
+            if (newText) {
+              lastSentLength = text.length
+              checkAndHandleCompareMode(newText, false)
+              
+              if (doneTimeout) clearTimeout(doneTimeout)
+              doneTimeout = setTimeout(() => {
+                checkAndHandleCompareMode('', true)
+                compareObserver?.disconnect()
+                compareObserver = null
+              }, 2000)
+            }
+          }
+        })
+        compareObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
+      }
+    }
+  }, 1000)
+}
+
 function init(): void {
   console.log('[Cortex:Grok] Tracker initialized')
   interceptGrokFetch()
@@ -191,6 +291,7 @@ function init(): void {
   if (convId) saveConversationId(convId)
   setTimeout(() => scrapeHistoryFromDOM(), 2000)
   watchURLChanges()
+  watchForCompareMode()
 }
 
 init()

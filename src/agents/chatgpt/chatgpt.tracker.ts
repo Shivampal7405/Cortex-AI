@@ -17,7 +17,8 @@ const STORAGE_KEYS = {
 // Extract conversation ID from ChatGPT URL
 // Handles both /c/{id} (standard) and /g/{id} (GPT model routes)
 function getConversationId(): string | null {
-  const match = window.location.pathname.match(/\/(?:c|g)\/([a-zA-Z0-9-]+)/)
+  const match = window.location.pathname
+    .match(/\/(?:c|g)\/([a-zA-Z0-9-]+)/)
   return match ? (match[1] ?? null) : null
 }
 
@@ -101,13 +102,15 @@ function parseChattGPTHistory(
     if (!msg?.content?.parts) continue
 
     const role    = msg.author?.role
+    // Skip system, tool, multimodal_text roles:
+    if (!['user', 'assistant'].includes(role ?? '')) continue
+
     const content = msg.content.parts
                       .filter(Boolean)
                       .join('')
                       .trim()
 
     if (!content) continue
-    if (role !== 'user' && role !== 'assistant') continue
 
     messages.push({
       role:      role as 'user' | 'assistant',
@@ -136,6 +139,71 @@ function watchURLChanges(): void {
   })
 }
 
+async function checkAndHandleCompareMode(
+  responseText: string,
+  isDone: boolean
+): Promise<boolean> {
+  const storage = await chrome.storage.local.get('compare_mode')
+  const mode = storage['compare_mode'] as {
+    active: boolean
+    target: string
+  } | null
+
+  const thisProvider = 'chatgpt'
+
+  if (!mode?.active || mode.target !== thisProvider) return false
+
+  chrome.runtime.sendMessage({
+    type:     'COMPARE_RESULT',
+    provider: thisProvider,
+    chunk:    responseText,
+    done:     isDone,
+  }).catch(() => {})
+
+  if (isDone) {
+    chrome.storage.local.remove('compare_mode')
+  }
+  return true
+}
+
+let compareObserver: MutationObserver | null = null
+
+function watchForCompareMode(): void {
+  // We use DOM polling since fetching SSE text is complex
+  setInterval(async () => {
+    const storage = await chrome.storage.local.get('compare_mode')
+    const mode = storage['compare_mode'] as { active: boolean; target: string } | null
+    if (mode?.active && mode.target === 'chatgpt') {
+      if (!compareObserver) {
+        let lastSentLength = 0
+        compareObserver = new MutationObserver(() => {
+          const msgs = document.querySelectorAll('.markdown.prose, [data-message-author-role="assistant"]')
+          const lastMsg = msgs[msgs.length - 1]
+          if (lastMsg) {
+            const text = lastMsg.textContent || ''
+            const newText = text.slice(lastSentLength)
+            if (newText) {
+              lastSentLength = text.length
+              const isStreaming = document.querySelector('.result-streaming') !== null
+              checkAndHandleCompareMode(newText, false)
+              
+              if (!isStreaming) {
+                // Done!
+                setTimeout(() => {
+                  checkAndHandleCompareMode('', true)
+                }, 500)
+                compareObserver?.disconnect()
+                compareObserver = null
+              }
+            }
+          }
+        })
+        compareObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
+      }
+    }
+  }, 1000)
+}
+
 // Entry point
 function init(): void {
   console.log('[Cortex:ChatGPT] Tracker initialized')
@@ -149,6 +217,8 @@ function init(): void {
 
   // Watch for navigation to new conversations
   watchURLChanges()
+
+  watchForCompareMode()
 }
 
 init()

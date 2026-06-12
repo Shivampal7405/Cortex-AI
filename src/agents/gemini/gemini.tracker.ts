@@ -125,22 +125,71 @@ function parseGeminiBatchExecute(text: string): ChatMessage[] {
 async function scrapeHistoryFromDOM(): Promise<void> {
   const messages: ChatMessage[] = []
 
-  const userMsgs = document.querySelectorAll(
-    '.user-query-text,[data-message-author-role="user"],' +
-    '.query-text,user-query,[class*="UserMessage"]'
-  )
-  const asstMsgs = document.querySelectorAll(
-    '.model-response-text,[data-message-author-role="model"],' +
-    '.response-content,model-response,[class*="ModelResponse"]'
-  )
+  const USER_SELECTORS = [
+    '.user-query-text-line',
+    '.user-query-text',
+    '[data-message-author-role="user"]',
+    '.query-text',
+    'user-query .query-content',
+    '[class*="UserQuery"]',
+    '[class*="HumanTurn"]',
+  ]
+
+  const ASST_SELECTORS = [
+    '.model-response-text',
+    '.response-content p',
+    '[data-message-author-role="model"]',
+    'model-response .response-content',
+    '[class*="ModelResponse"]',
+    '[class*="AiResponse"]',
+    'message-content',
+  ]
+
+  // Try each selector set
+  let userEls: Element[] = []
+  for (const sel of USER_SELECTORS) {
+    const found = document.querySelectorAll(sel)
+    if (found.length > 0) {
+      userEls = Array.from(found)
+      console.log('[Cortex:Gemini] User selector hit:', sel)
+      break
+    }
+  }
+
+  if (userEls.length === 0) {
+    // Log available classes for debugging
+    const classes = [...document.querySelectorAll('[class]')]
+      .map(el => el.className)
+      .filter(c =>
+        typeof c === 'string' &&
+        (c.includes('message') ||
+         c.includes('query')   ||
+         c.includes('response'))
+      )
+      .slice(0, 15)
+    console.warn(
+      '[Cortex:Gemini] No user messages found.',
+      'Available classes:', classes
+    )
+  }
+
+  let asstEls: Element[] = []
+  for (const sel of ASST_SELECTORS) {
+    const found = document.querySelectorAll(sel)
+    if (found.length > 0) {
+      asstEls = Array.from(found)
+      console.log('[Cortex:Gemini] Asst selector hit:', sel)
+      break
+    }
+  }
 
   const allEls = [
-    ...Array.from(userMsgs).map(el => ({
+    ...userEls.map(el => ({
       role: 'user' as const,
       el,
       top:  el.getBoundingClientRect().top,
     })),
-    ...Array.from(asstMsgs).map(el => ({
+    ...asstEls.map(el => ({
       role: 'assistant' as const,
       el,
       top:  el.getBoundingClientRect().top,
@@ -185,6 +234,87 @@ function watchForNewMessages(): void {
   }).observe(document.body, { childList: true, subtree: true, characterData: true })
 }
 
+async function checkAndHandleCompareMode(
+  responseText: string,
+  isDone: boolean
+): Promise<boolean> {
+  const storage = await chrome.storage.local.get('compare_mode')
+  const mode = storage['compare_mode'] as {
+    active: boolean
+    target: string
+  } | null
+
+  const thisProvider = 'gemini'
+
+  if (!mode?.active || mode.target !== thisProvider) return false
+
+  chrome.runtime.sendMessage({
+    type:     'COMPARE_RESULT',
+    provider: thisProvider,
+    chunk:    responseText,
+    done:     isDone,
+  }).catch(() => {})
+
+  if (isDone) {
+    chrome.storage.local.remove('compare_mode')
+  }
+  return true
+}
+
+let compareObserver: MutationObserver | null = null
+
+function watchForCompareMode(): void {
+  setInterval(async () => {
+    const storage = await chrome.storage.local.get('compare_mode')
+    const mode = storage['compare_mode'] as { active: boolean; target: string } | null
+    if (mode?.active && mode.target === 'gemini') {
+      if (!compareObserver) {
+        let lastSentLength = 0
+        let doneTimeout: ReturnType<typeof setTimeout> | null = null
+        
+        compareObserver = new MutationObserver(() => {
+          const ASST_SELECTORS = [
+            '.model-response-text',
+            '.response-content p',
+            '[data-message-author-role="model"]',
+            'model-response .response-content',
+            '[class*="ModelResponse"]',
+            '[class*="AiResponse"]',
+            'message-content',
+          ]
+          
+          let asstEls: Element[] = []
+          for (const sel of ASST_SELECTORS) {
+            const found = document.querySelectorAll(sel)
+            if (found.length > 0) {
+              asstEls = Array.from(found)
+              break
+            }
+          }
+          
+          const lastMsg = asstEls[asstEls.length - 1]
+          if (lastMsg) {
+            const text = lastMsg.textContent || ''
+            const newText = text.slice(lastSentLength)
+            if (newText) {
+              lastSentLength = text.length
+              checkAndHandleCompareMode(newText, false)
+              
+              if (doneTimeout) clearTimeout(doneTimeout)
+              doneTimeout = setTimeout(() => {
+                checkAndHandleCompareMode('', true)
+                compareObserver?.disconnect()
+                compareObserver = null
+              }, 2000)
+            }
+          }
+        })
+        compareObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
+      }
+    }
+  }, 1000)
+}
+
 function init(): void {
   console.log('[Cortex:Gemini] Tracker initialized')
   interceptGeminiFetch()
@@ -193,6 +323,7 @@ function init(): void {
   setTimeout(() => scrapeHistoryFromDOM(), 2000)
   watchURLChanges()
   watchForNewMessages()
+  watchForCompareMode()
 }
 
 init()

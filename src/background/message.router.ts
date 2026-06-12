@@ -2,15 +2,19 @@
  * message.router.ts
  * Central message hub for the background service worker.
  * Routes messages between content scripts, popup, and storage.
- * All chrome.runtime.sendMessage calls end up here.
+ * Compare + Prompts logic lives in feature.handlers.ts.
  */
 
-import { handleUsageUpdate }  from './usage.aggregator'
-import { transferContext }     from '../memory/context.transfer'
-import { buildContextBlock }   from '../memory/memory.injector'
+import { handleUsageUpdate }     from './usage.aggregator'
+import { transferContext }       from '../memory/context.transfer'
+import { buildContextBlock }     from '../memory/memory.injector'
 import { saveFact, getAllFacts } from '../memory/memory.store'
-import type { Provider }       from '../shared/types'
-import type { MemoryFact }     from '../memory/memory.types'
+import {
+  handleCompareStart, handleCompareResult,
+  getPrompts, savePrompt, deletePrompt, injectPrompt,
+} from './feature.handlers'
+import type { Provider, SavedPrompt } from '../shared/types'
+import type { MemoryFact }            from '../memory/memory.types'
 
 export type RouterMessage =
   | { type: 'USAGE_UPDATE';     provider: string; data: unknown }
@@ -23,10 +27,16 @@ export type RouterMessage =
   | { type: 'GET_MEMORY_JSON' }
   | { type: 'SAVE_API_KEY';     provider: string; key: string }
   | { type: 'GET_HEATMAP';      provider: string }
+  | { type: 'COMPARE_START';    prompt: string; targetProvider: Provider; claudeResponse: string }
+  | { type: 'COMPARE_RESULT';   chunk: string; done: boolean; provider: Provider }
+  | { type: 'GET_PROMPTS' }
+  | { type: 'SAVE_PROMPT';      prompt: SavedPrompt }
+  | { type: 'DELETE_PROMPT';    id: string }
+  | { type: 'INJECT_PROMPT';    content: string; provider: string }
 
 export function initMessageRouter(): void {
   chrome.runtime.onMessage.addListener(
-    (message: RouterMessage, _sender, sendResponse) => {
+    (message: RouterMessage, sender, sendResponse) => {
 
       switch (message.type) {
 
@@ -113,6 +123,40 @@ export function initMessageRouter(): void {
             sendResponse(data)
           })().catch(() => sendResponse({}))
           return true
+
+        case 'COMPARE_START': {
+          const tabId = sender?.tab?.id
+          if (!tabId) return false
+          handleCompareStart(message.prompt, message.targetProvider, tabId)
+            .catch(err => console.warn('[Cortex] COMPARE_START failed:', err))
+          return false
+        }
+
+        case 'COMPARE_RESULT':
+          handleCompareResult(message.chunk, message.done, message.provider)
+            .catch(err => console.warn('[Cortex] COMPARE_RESULT failed:', err))
+          return false
+
+        case 'GET_PROMPTS':
+          getPrompts().then(sendResponse).catch(() => sendResponse([]))
+          return true
+
+        case 'SAVE_PROMPT':
+          savePrompt(message.prompt)
+            .then(() => sendResponse({ success: true }))
+            .catch(() => sendResponse({ success: false }))
+          return true
+
+        case 'DELETE_PROMPT':
+          deletePrompt(message.id)
+            .then(() => sendResponse({ success: true }))
+            .catch(() => sendResponse({ success: false }))
+          return true
+
+        case 'INJECT_PROMPT':
+          injectPrompt(message.content, message.provider)
+            .catch(err => console.warn('[Cortex] INJECT_PROMPT failed:', err))
+          return false
 
         default:
           return false

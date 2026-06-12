@@ -10,6 +10,7 @@
  */
 
 import { mountTokenBar } from '../../content-ui/shared/mount'
+import { mountCompareOverlay } from '../../content-ui/compare-overlay/mount'
 
 // ─── Silence "Extension context invalidated" noise ────────
 // When the extension reloads, the old content script keeps running in the tab.
@@ -281,22 +282,26 @@ import { injectIntoInput } from '../../memory/memory.injector'
 async function init(): Promise<void> {
   console.log('[Cortex] Claude content script initializing')
 
-  const orgId = getOrgId()
+  const orgId  = getOrgId()
+  const convId = getConversationId()
+
   if (!orgId) {
-    console.warn('[Cortex] Claude: lastActiveOrg cookie not found — not logged in?')
-    const cookieNames = document.cookie.split(';').map(c => c.trim().split('=')[0]).filter(Boolean)
-    console.warn('[Cortex] Available cookie names:', cookieNames)
-    return
+    console.warn('[Cortex] Claude: lastActiveOrg cookie missing')
+    console.warn('[Cortex] Cookies available:',
+      document.cookie.split(';')
+        .map(c => c.trim().split('=')[0])
+        .join(', ')
+    )
+  } else {
+    chrome.storage.local.set({ claude_org_id: orgId })
+    console.log('[Cortex] orgId saved:', orgId)
   }
 
-  console.log('[Cortex] orgId found:', orgId)
-
-  // Save for background worker context transfer
-  if (chrome.runtime?.id) {
-    chrome.storage.local.set({
-      'claude_org_id':  orgId,
-      'claude_conv_id': getConversationId() ?? '',
-    })
+  if (convId) {
+    chrome.storage.local.set({ claude_conv_id: convId })
+    console.log('[Cortex] convId saved:', convId)
+  } else {
+    console.warn('[Cortex] No convId in URL:', window.location.pathname)
   }
 
   // Start SSE interception (catches real-time message_limit events via MAIN world injection)
@@ -334,9 +339,47 @@ async function init(): Promise<void> {
   // Receive memory injection from background (via MAIN world postMessage)
   window.addEventListener('message', (event: MessageEvent) => {
     if (event.source !== window) return
-    if (event.data?.type !== 'CORTEX_INJECT_MEMORY') return
-    injectIntoInput(event.data.block as string, 'claude')
+    if (event.data?.type === 'CORTEX_INJECT_MEMORY') {
+      injectIntoInput(event.data.block as string, 'claude')
+    } else if (event.data?.type === 'CORTEX_COMPARE_START') {
+      const { prompt, targetProvider } = event.data
+      const lastResponse = getLastClaudeResponse()
+
+      // Mount overlay immediately so we see the streaming
+      mountCompareOverlay(lastResponse, targetProvider)
+
+      chrome.runtime.sendMessage({
+        type:           'COMPARE_START',
+        prompt,
+        targetProvider,
+        claudeResponse: lastResponse,
+      }).catch(() => {})
+    }
   })
+
+  // Listen for COMPARE_RESULT from background
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'COMPARE_RESULT') {
+      window.postMessage({
+        type:  'CORTEX_COMPARE_CHUNK',
+        chunk: msg.chunk,
+      }, '*')
+    }
+    if (msg.type === 'COMPARE_DONE') {
+      window.postMessage({
+        type: 'CORTEX_COMPARE_DONE',
+      }, '*')
+    }
+  })
+}
+
+function getLastClaudeResponse(): string {
+  // Find the last assistant message in the DOM
+  const msgs = document.querySelectorAll(
+    '.font-claude-message, [data-is-streaming="false"], [data-testid="assistant-message"]'
+  )
+  const last = msgs[msgs.length - 1]
+  return last?.textContent?.trim() ?? ''
 }
 
 function mountTokenBarWhenReady(): void {

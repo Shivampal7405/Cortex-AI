@@ -20,14 +20,16 @@ export function AlertsView() {
   const [alerts,    setAlerts]    = useState<AlertRecord[]>([])
   const [threshold, setThreshold] = useState(80)
   const [quiet,     setQuiet]     = useState(false)
+  const [budget,    setBudget]    = useState(0)
 
   useEffect(() => {
     chrome.storage.local.get(
-      ['cortex_alert_history', 'alert_warn_threshold', 'alert_quiet_mode'],
+      ['cortex_alert_history', 'alert_warn_threshold', 'alert_quiet_mode', 'cortex_monthly_budget'],
       (r) => {
         setAlerts((r['cortex_alert_history'] as AlertRecord[]) ?? [])
         setThreshold((r['alert_warn_threshold'] as number) ?? 80)
         setQuiet((r['alert_quiet_mode'] as boolean) ?? false)
+        setBudget((r['cortex_monthly_budget'] as number) ?? 0)
       }
     )
   }, [])
@@ -40,6 +42,11 @@ export function AlertsView() {
   const saveQuiet = (v: boolean) => {
     setQuiet(v)
     chrome.storage.local.set({ alert_quiet_mode: v })
+  }
+
+  const saveBudget = (v: number) => {
+    setBudget(v)
+    chrome.storage.local.set({ cortex_monthly_budget: v })
   }
 
   return (
@@ -58,6 +65,19 @@ export function AlertsView() {
           >
             {[50, 60, 70, 80, 90].map(v => <option key={v} value={v}>{v}%</option>)}
           </select>
+        </div>
+
+        <div className="flex justify-between items-center mb-3 text-sm">
+          <span>Monthly Budget (USD)</span>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={budget || ''}
+            onChange={e => saveBudget(Number(e.target.value))}
+            placeholder="No limit"
+            className="text-xs px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-transparent text-right w-24 outline-none focus:border-purple-500 transition-colors"
+          />
         </div>
 
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">

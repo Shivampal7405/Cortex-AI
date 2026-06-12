@@ -40,34 +40,39 @@ function parseJSON(raw: string): MemoryJSON | null {
 }
 
 async function getKeys(): Promise<{ claude: string | null; openai: string | null; gemini: string | null }> {
-  const r = await chrome.storage.local.get(['api_key_claude', 'api_key_openai', 'api_key_gemini'])
+  const result = await chrome.storage.local.get(['api_key_claude', 'api_key_openai', 'api_key_gemini'])
 
-  // Trim whitespace — common paste error
   const keys = {
-    claude: ((r['api_key_claude'] as string) || '').trim() || null,
-    openai: ((r['api_key_openai'] as string) || '').trim() || null,
-    gemini: ((r['api_key_gemini'] as string) || '').trim() || null,
+    claude: (result['api_key_claude'] as string) || null,
+    openai: (result['api_key_openai'] as string) || null,
+    gemini: (result['api_key_gemini'] as string) || null,
   }
 
-  // Minimal format guard — flag obvious mistakes without blocking valid keys
+  // Trim whitespace (common paste error)
+  if (keys.claude) keys.claude = keys.claude.trim()
+  if (keys.openai) keys.openai = keys.openai.trim()
+  if (keys.gemini) keys.gemini = keys.gemini.trim()
+
+  // Minimal format validation
   if (keys.claude && !keys.claude.startsWith('sk-ant-')) {
-    console.warn('[Cortex] Claude key format unexpected (expected sk-ant-...)')
+    console.warn('[Cortex] Claude key format invalid — ignored')
     keys.claude = null
   }
   if (keys.openai && !keys.openai.startsWith('sk-')) {
-    console.warn('[Cortex] OpenAI key format unexpected (expected sk-...)')
+    console.warn('[Cortex] OpenAI key format invalid — ignored')
     keys.openai = null
   }
   if (keys.gemini && !keys.gemini.startsWith('AIza')) {
-    console.warn('[Cortex] Gemini key format unexpected (expected AIza...)')
+    console.warn('[Cortex] Gemini key format invalid — ignored')
     keys.gemini = null
   }
 
-  console.log('[Cortex] API keys:', {
+  console.log('[Cortex] API keys status:', {
     claude: keys.claude ? 'SET' : 'MISSING',
     openai: keys.openai ? 'SET' : 'MISSING',
     gemini: keys.gemini ? 'SET' : 'MISSING',
   })
+
   return keys
 }
 
@@ -99,47 +104,69 @@ async function callOpenAI(key: string, body: string): Promise<MemoryJSON | null>
   return parseJSON((await r.json())?.choices?.[0]?.message?.content ?? '')
 }
 
-async function callGemini(key: string, body: string): Promise<MemoryJSON | null> {
+async function callGemini(
+  apiKey:  string,
+  content: string
+): Promise<MemoryJSON | null> {
   console.log('[Cortex] Calling Gemini API...')
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`
+
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta` +
+    `/models/gemini-2.0-flash:generateContent?key=${apiKey}`
 
   let res: Response
   try {
     res = await fetch(url, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        contents:         [{ parts: [{ text: body }] }],
-        generationConfig: { maxOutputTokens: 2000, temperature: 0.1 },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: content }]
+        }],
+        generationConfig: {
+          maxOutputTokens:  2000,
+          temperature:      0.1,
+          responseMimeType: 'application/json',
+        },
       }),
     })
   } catch (err) {
-    console.error('[Cortex] Gemini fetch threw:', err)
+    console.error('[Cortex] Gemini network error:', err)
     return null
   }
 
   if (!res.ok) {
-    const errBody = await res.text().catch(() => 'unreadable')
-    console.error('[Cortex] Gemini API error:', res.status, errBody.slice(0, 300))
+    const errText = await res.text().catch(() => 'unreadable')
+    console.error(
+      '[Cortex] Gemini API error:',
+      res.status, errText
+    )
     return null
   }
 
   let data: unknown
-  try { data = await res.json() } catch {
-    console.error('[Cortex] Gemini response is not JSON')
+  try {
+    data = await res.json()
+  } catch {
+    console.error('[Cortex] Gemini response not valid JSON')
     return null
   }
 
   const text = (data as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+    candidates?: Array<{
+      content?: { parts?: Array<{ text?: string }> }
+    }>
   })?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
 
   if (!text) {
-    console.error('[Cortex] Gemini returned empty text. Response:', JSON.stringify(data).slice(0, 300))
+    console.error('[Cortex] Gemini returned empty text:', data)
     return null
   }
 
-  console.log('[Cortex] Gemini response preview:', text.slice(0, 200))
+  console.log(
+    '[Cortex] Gemini response preview:',
+    text.slice(0, 100)
+  )
   return parseJSON(text)
 }
 

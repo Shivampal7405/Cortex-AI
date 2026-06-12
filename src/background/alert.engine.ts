@@ -91,6 +91,7 @@ export async function updateBadge(): Promise<void> {
 export async function checkAlerts(): Promise<void> {
   const r = await chrome.storage.local.get([
     'provider:claude', 'provider:chatgpt', 'provider:grok', 'alert_warn_threshold',
+    'cortex_monthly_budget', 'cortex_monthly_cost'
   ])
   const threshold = (r['alert_warn_threshold'] as number) ?? 80
 
@@ -105,6 +106,15 @@ export async function checkAlerts(): Promise<void> {
   if (chatgpt?.['pct_used'])  checks.push({ provider: 'chatgpt', metric: 'daily messages', pct: chatgpt['pct_used']  })
   if (grok?.['pct_used'])     checks.push({ provider: 'grok',    metric: 'message limit',  pct: grok['pct_used']     })
 
+  const budget = (r['cortex_monthly_budget'] as number) || 0
+  const cost   = (r['cortex_monthly_cost'] as number) || 0
+
+  if (budget > 0) {
+    const costPct = (cost / budget) * 100
+    if (costPct >= 100) await fireAlert('budget' as Provider, 'monthly cost', costPct, 'critical')
+    else if (costPct >= threshold) await fireAlert('budget' as Provider, 'monthly cost', costPct, 'warning')
+  }
+
   for (const c of checks) {
     if (c.pct >= 100)            await fireAlert(c.provider, c.metric, c.pct, 'critical')
     else if (c.pct >= threshold) await fireAlert(c.provider, c.metric, c.pct, 'warning')
@@ -115,7 +125,7 @@ export async function checkAlerts(): Promise<void> {
 
 export function initAlertEngine(): void {
   chrome.storage.onChanged.addListener((changes) => {
-    const watched = ['provider:claude', 'provider:chatgpt', 'provider:grok']
+    const watched = ['provider:claude', 'provider:chatgpt', 'provider:grok', 'cortex_monthly_cost', 'cortex_monthly_budget']
     if (Object.keys(changes).some(k => watched.includes(k))) checkAlerts()
   })
   checkAlerts()

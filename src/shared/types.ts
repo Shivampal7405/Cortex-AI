@@ -95,6 +95,17 @@ export interface SessionRecord {
   ended_at: number;
 }
 
+// Saved prompt library entry (Prompts tab)
+export interface SavedPrompt {
+  id:         string;
+  title:      string;
+  content:    string;
+  tags:       string[];
+  use_count:  number;
+  created_at: number;
+  pinned:     boolean;
+}
+
 // Alert types
 export interface AlertRule {
   provider: Provider;

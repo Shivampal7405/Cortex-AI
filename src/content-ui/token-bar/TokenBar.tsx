@@ -10,6 +10,7 @@ import React, { useEffect, useState } from 'react'
 import type { Provider, TokenBarState } from '../../shared/types'
 import { PROVIDER_COLORS } from '../../shared/constants'
 import { ModelSwitcher } from './ModelSwitcher'
+import { CompareButton } from '../compare-overlay/CompareButton'
 
 interface TokenBarProps {
   provider: Provider
@@ -84,6 +85,10 @@ export function TokenBar({ provider }: TokenBarProps): React.ReactElement {
           <div className="w-px h-3 bg-black/15 dark:bg-white/15 mx-1" />
 
           <ModelSwitcher provider={provider} currentModel={state.model} />
+
+          <div className="w-px h-3 bg-black/15 dark:bg-white/15 mx-1" />
+
+          <CompareButton provider={provider} />
 
           <div className="w-px h-3 bg-black/15 dark:bg-white/15 mx-1" />
         </>

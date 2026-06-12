@@ -76,30 +76,31 @@ function injectConversationIntoPage(
   return false
 }
 
-// Retry injection up to 3 times — target SPAs need time to render the input.
-// Delays: 1.5 s, then 2 s more, then 3 s more (cumulative: 1.5 / 3.5 / 6.5 s).
-async function tryInject(
-  tabId:    number,
-  text:     string,
-  sels:     string[],
-  attempt = 1
+async function injectWithRetry(
+  tabId:     number,
+  formatted: string,
+  selectors: string[],
+  maxTries:  number = 3
 ): Promise<void> {
-  try {
-    const res = await chrome.scripting.executeScript({
-      target: { tabId },
-      func:   injectConversationIntoPage,
-      args:   [text, sels],
-      world:  'MAIN',
-    })
-    const succeeded = (res?.[0]?.result as boolean | undefined) === true
-    console.log(`[Cortex] Inject attempt ${attempt}: ${succeeded ? 'success' : 'input not ready'}`)
-    if (!succeeded && attempt < 3) {
-      setTimeout(() => void tryInject(tabId, text, sels, attempt + 1), attempt * 2000)
+  for (let i = 0; i < maxTries; i++) {
+    await new Promise(r => setTimeout(r, 1500 * (i + 1)))
+    try {
+      const result = await chrome.scripting.executeScript({
+        target: { tabId },
+        func:   injectConversationIntoPage,
+        args:   [formatted, selectors],
+        world:  'MAIN',
+      })
+      // Check if injection succeeded
+      if (result?.[0]?.result === true) {
+        console.log('[Cortex] Injection succeeded on attempt', i + 1)
+        return
+      }
+    } catch (err) {
+      console.warn(`[Cortex] Inject attempt ${i + 1} failed:`, err)
     }
-  } catch (err) {
-    console.warn(`[Cortex] Inject attempt ${attempt} threw:`, err)
-    if (attempt < 3) setTimeout(() => void tryInject(tabId, text, sels, attempt + 1), attempt * 2000)
   }
+  console.error('[Cortex] All injection attempts failed')
 }
 
 export async function transferContext(
@@ -109,8 +110,7 @@ export async function transferContext(
   console.log('[Cortex] Transfer started:', from, '→', to)
 
   const messages = await forceFreshHistory(from)
-  console.log('[Cortex] Messages fetched:', messages.length,
-    messages[0] ? `— first: "${messages[0].content.slice(0, 60)}"` : '')
+  console.log('[Cortex] Messages fetched:', messages.length)
 
   if (messages.length === 0) {
     console.warn(`[Cortex] No history for ${from}. Visit the provider page first.`)
@@ -134,7 +134,7 @@ export async function transferContext(
     if (injected) return
     injected = true
     chrome.tabs.onUpdated.removeListener(listener)
-    setTimeout(() => void tryInject(tabId, formatted, selectors), 1500)
+    void injectWithRetry(tabId, formatted, selectors)
   }
   chrome.tabs.onUpdated.addListener(listener)
 

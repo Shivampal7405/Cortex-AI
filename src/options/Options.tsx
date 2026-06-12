@@ -14,37 +14,70 @@ const API_PROVIDERS = [
   { id: 'gemini',  label: 'Gemini API Key',  placeholder: 'AIza...',    hint: 'Free tier available'                         },
 ] as const
 
-async function testKey(id: string, key: string): Promise<boolean> {
+async function testApiKey(
+  provider: 'claude' | 'openai' | 'gemini',
+  key:      string
+): Promise<{ ok: boolean; message: string }> {
+
   try {
-    if (id === 'claude') {
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 10, messages: [{ role: 'user', content: 'Reply: OK' }] }),
-      })
-      return r.ok
+    if (provider === 'claude') {
+      const res = await fetch(
+        'https://api.anthropic.com/v1/messages',
+        {
+          method:  'POST',
+          headers: {
+            'Content-Type':      'application/json',
+            'x-api-key':         key.trim(),
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model:      'claude-haiku-4-5',
+            max_tokens: 5,
+            messages:   [{ role: 'user', content: 'Hi' }],
+          }),
+        }
+      )
+      return res.ok
+        ? { ok: true,  message: '✓ Connected' }
+        : { ok: false, message: `✗ Failed (${res.status})` }
     }
-    if (id === 'openai') {
-      const r = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-        body: JSON.stringify({ model: 'gpt-4o-mini', max_tokens: 10, messages: [{ role: 'user', content: 'Reply: OK' }] }),
-      })
-      return r.ok
+
+    if (provider === 'openai') {
+      const res = await fetch(
+        'https://api.openai.com/v1/models',
+        {
+          headers: { 'Authorization': `Bearer ${key.trim()}` },
+        }
+      )
+      return res.ok
+        ? { ok: true,  message: '✓ Connected' }
+        : { ok: false, message: `✗ Failed (${res.status})` }
     }
-    if (id === 'gemini') {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`
-      const r = await fetch(url, {
-        method: 'POST',
+
+    if (provider === 'gemini') {
+      const url =
+        `https://generativelanguage.googleapis.com/v1beta` +
+        `/models/gemini-2.0-flash:generateContent` +
+        `?key=${key.trim()}`
+      const res = await fetch(url, {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: 'Reply: OK' }] }], generationConfig: { maxOutputTokens: 10 } }),
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: 'Reply: OK' }]
+          }],
+          generationConfig: { maxOutputTokens: 5 },
+        }),
       })
-      return r.ok
+      return res.ok
+        ? { ok: true,  message: '✓ Connected' }
+        : { ok: false, message: `✗ Failed (${res.status})` }
     }
-    return false
   } catch {
-    return false
+    return { ok: false, message: '✗ Network error' }
   }
+
+  return { ok: false, message: '✗ Unknown provider' }
 }
 
 export function Options() {
@@ -78,9 +111,9 @@ export function Options() {
     if (!key) { setTestResult(prev => ({ ...prev, [id]: '✗ Enter a key first' })); return }
     setTesting(prev => ({ ...prev, [id]: true }))
     setTestResult(prev => ({ ...prev, [id]: '' }))
-    const ok = await testKey(id, key)
+    const result = await testApiKey(id as 'claude' | 'openai' | 'gemini', key)
     setTesting(prev => ({ ...prev, [id]: false }))
-    setTestResult(prev => ({ ...prev, [id]: ok ? '✓ Connected' : '✗ Failed — check key' }))
+    setTestResult(prev => ({ ...prev, [id]: result.message }))
     setTimeout(() => setTestResult(prev => ({ ...prev, [id]: '' })), 5000)
   }
 

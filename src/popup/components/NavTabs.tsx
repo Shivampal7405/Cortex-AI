@@ -1,4 +1,4 @@
-type Tab = 'overview' | 'memory' | 'history' | 'alerts';
+type Tab = 'overview' | 'memory' | 'history' | 'alerts' | 'prompts';
 
 interface NavTabsProps {
   activeTab: Tab;
@@ -11,6 +11,7 @@ export function NavTabs({ activeTab, onTabChange, hasNewFacts }: NavTabsProps) {
     { id: 'overview', label: 'Overview' },
     { id: 'memory', label: 'Memory' },
     { id: 'history', label: 'History' },
+    { id: 'prompts', label: 'Prompts' },
     { id: 'alerts', label: 'Alerts' },
   ];
 
