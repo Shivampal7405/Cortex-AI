@@ -30,14 +30,16 @@ function injectAndSubmitPrompt(promptText: string, prov: string): void {
     chatgpt: ['#prompt-textarea', 'textarea[data-id]', 'textarea'],
     // Gemini uses a <rich-textarea> custom element; its inner textarea is accessible
     gemini:  ['rich-textarea textarea', 'textarea', '.ql-editor', '[contenteditable="true"]'],
-    grok:    ['[data-testid="tweetTextarea_0"]', 'textarea', '[contenteditable="true"]'],
+    grok:    ['textarea', 'div[contenteditable="true"]', '[data-testid="tweetTextarea_0"]', '[contenteditable="true"]'],
   }
   const submitSelectors = [
     '[data-testid="send-button"]',
+    '[data-testid*="send" i]',
     'button[aria-label*="Send" i]',
-    'button[aria-label*="send" i]',
+    'button[aria-label*="submit" i]',
     'button[jsaction*="send" i]',
     'button.send-button',
+    'button[type="submit"]',
     'form button[type="submit"]',
   ].join(',')
 
@@ -59,8 +61,11 @@ function injectAndSubmitPrompt(promptText: string, prov: string): void {
     }
     setTimeout(() => {
       const btn = document.querySelector(submitSelectors) as HTMLButtonElement | null
-      if (btn) { btn.click() }
-      else { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true })) }
+      if (btn && !btn.disabled) { btn.click(); return }
+      // Fallback: full Enter key sequence on the input (Grok and others submit on Enter)
+      for (const type of ['keydown', 'keypress', 'keyup']) {
+        el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))
+      }
     }, 800)
     return
   }
@@ -75,7 +80,10 @@ export async function handleCompareStart(
     compare_mode: { active: true, prompt, target: targetProvider, sourceTabId },
   })
 
-  let targetTabs = await chrome.tabs.query({ url: TAB_URL_PATTERNS[targetProvider] ?? '' })
+  const queryUrls = targetProvider === 'grok'
+    ? ['https://x.com/*', 'https://grok.com/*']
+    : [TAB_URL_PATTERNS[targetProvider] ?? '']
+  let targetTabs = await chrome.tabs.query({ url: queryUrls })
 
   if (targetTabs.length === 0) {
     const newTab = await chrome.tabs.create({ url: OPEN_URLS[targetProvider] ?? '', active: false })
