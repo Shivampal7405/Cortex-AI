@@ -50,14 +50,17 @@ function injectAndSubmitPrompt(promptText: string, prov: string): void {
       el.dispatchEvent(new Event('input',  { bubbles: true }))
       el.dispatchEvent(new Event('change', { bubbles: true }))
     } else if (el.isContentEditable) {
-      el.innerText = promptText
+      // ProseMirror (Claude) ignores direct innerText assignment - use execCommand
+      // so proper beforeinput/input events fire and the editor model updates.
+      document.execCommand('selectAll', false, undefined)
+      document.execCommand('insertText', false, promptText)
       el.dispatchEvent(new InputEvent('input', { bubbles: true, data: promptText }))
     }
     setTimeout(() => {
       const btn = document.querySelector(submitSelectors) as HTMLButtonElement | null
       if (btn) { btn.click() }
       else { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true })) }
-    }, 500)
+    }, 800)
     return
   }
 }
