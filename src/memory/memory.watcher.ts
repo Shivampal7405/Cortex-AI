@@ -15,6 +15,8 @@ export function watchForFacts(
   const processedMessages = new Set<string>()
 
   const observer = new MutationObserver(async () => {
+    // Stop the orphaned observer after an extension reload
+    if (!chrome.runtime?.id) { observer.disconnect(); return }
     // Find user message elements
     const userMessages = document.querySelectorAll(
       '[data-testid="user-message"], .human-turn, [data-role="user"]'
@@ -32,10 +34,9 @@ export function watchForFacts(
         console.log('[Cortex] Fact extracted:', fact.content)
 
         // Route through background: saves to chrome.storage and notifies popup
-        chrome.runtime.sendMessage({
-          type: 'SAVE_FACT',
-          fact,
-        }).catch(() => {})
+        try {
+          chrome.runtime.sendMessage({ type: 'SAVE_FACT', fact }).catch(() => {})
+        } catch { /* context invalidated */ }
       }
     }
   })

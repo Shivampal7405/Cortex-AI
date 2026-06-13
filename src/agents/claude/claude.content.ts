@@ -342,6 +342,7 @@ async function init(): Promise<void> {
 
 function mountTokenBarWhenReady(): void {
   const observer = new MutationObserver(() => {
+    if (!chrome.runtime?.id) { observer.disconnect(); return }
     if (document.getElementById('cortex-token-bar')) return
 
     // Find any anchor in the bottom input row

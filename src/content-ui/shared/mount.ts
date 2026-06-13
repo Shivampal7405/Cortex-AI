@@ -24,6 +24,8 @@ export function mountTokenBar(
   _anchorElement: HTMLElement,
   container: HTMLElement,
 ): void {
+  if (!chrome.runtime?.id) return  // extension reloaded - skip on orphaned script
+
   const containerId = 'cortex-token-bar'
 
   // Bug 3 step 1: unmount old React root to prevent memory leak

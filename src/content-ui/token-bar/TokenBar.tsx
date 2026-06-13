@@ -62,6 +62,7 @@ export function TokenBar({ provider }: TokenBarProps): React.ReactElement {
   const isDark = useDarkMode()
 
   useEffect(() => {
+    if (!chrome.runtime?.id) return
     chrome.storage.local.get([`tokenBarState:${provider}`]).then(res => {
       if (res[`tokenBarState:${provider}`]) setState(res[`tokenBarState:${provider}`])
     }).catch(() => {
