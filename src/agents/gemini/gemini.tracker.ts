@@ -128,26 +128,25 @@ function parseGeminiBatchExecute(text: string): ChatMessage[] {
 }
 
 async function scrapeHistoryFromDOM(): Promise<void> {
+  if (!chrome.runtime?.id) return  // orphaned after extension reload
   const messages: ChatMessage[] = []
 
   const USER_SELECTORS = [
-    '.user-query-text-line',
+    'user-query',
+    '[data-test-id="user-query"]',
+    '.user-query-bubble-with-background',
+    '.query-text',
     '.user-query-text',
     '[data-message-author-role="user"]',
-    '.query-text',
-    'user-query .query-content',
-    '[class*="UserQuery"]',
-    '[class*="HumanTurn"]',
   ]
 
   const ASST_SELECTORS = [
+    'model-response',
     '.model-response-text',
-    '.response-content p',
-    '[data-message-author-role="model"]',
-    'model-response .response-content',
-    '[class*="ModelResponse"]',
-    '[class*="AiResponse"]',
+    '.assistant-messages-primary-container',
     'message-content',
+    '.markdown',
+    '[data-message-author-role="model"]',
   ]
 
   // Try each selector set
@@ -156,7 +155,6 @@ async function scrapeHistoryFromDOM(): Promise<void> {
     const found = document.querySelectorAll(sel)
     if (found.length > 0) {
       userEls = Array.from(found)
-      console.log('[Cortex:Gemini] User selector hit:', sel)
       break
     }
   }
@@ -183,7 +181,6 @@ async function scrapeHistoryFromDOM(): Promise<void> {
     const found = document.querySelectorAll(sel)
     if (found.length > 0) {
       asstEls = Array.from(found)
-      console.log('[Cortex:Gemini] Asst selector hit:', sel)
       break
     }
   }
@@ -202,7 +199,7 @@ async function scrapeHistoryFromDOM(): Promise<void> {
   ].sort((a, b) => a.top - b.top)
 
   for (const { role, el } of allEls) {
-    const content = el.textContent?.trim()
+    const content = (el as HTMLElement).innerText?.trim()
     if (!content) continue
     messages.push({ role, content, timestamp: Date.now() })
   }
