@@ -22,7 +22,7 @@ export function ProviderCard({ provider, displayName, state }: ProviderCardProps
   let maxPct = 0;
   if (state.data) {
     if (provider === 'claude') {
-      maxPct = Math.max((state.data as ClaudeUsage).pct_5hr, (state.data as ClaudeUsage).pct_7day);
+      maxPct = (state.data as ClaudeUsage).pct_5hr;
     } else if (provider === 'chatgpt') {
       maxPct = (state.data as ChatGPTUsage).pct_used;
     } else if (provider === 'grok') {
@@ -90,12 +90,6 @@ export function ProviderCard({ provider, displayName, state }: ProviderCardProps
             label="5-hour"
             percentage={data.pct_5hr}
             subInfo={formatTimeRemaining(data.reset_5hr_at)}
-            colorHex={brandColor}
-          />
-          <UsageBar
-            label="7-day"
-            percentage={data.pct_7day}
-            subInfo={formatTimeRemaining(data.reset_7day_at)}
             colorHex={brandColor}
           />
         </div>
