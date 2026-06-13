@@ -143,6 +143,8 @@ async function scrapeHistoryFromDOM(): Promise<void> {
 
   const ASST_SELECTORS = [
     'model-response',
+    '.assistant-messages-primary-container',
+    '.message-text',
     '.model-response-text',
     '.assistant-messages-primary-container',
     'message-content',
@@ -158,23 +160,6 @@ async function scrapeHistoryFromDOM(): Promise<void> {
       userEls = Array.from(found)
       break
     }
-  }
-
-  if (userEls.length === 0) {
-    // Log available classes for debugging
-    const classes = [...document.querySelectorAll('[class]')]
-      .map(el => el.className)
-      .filter(c =>
-        typeof c === 'string' &&
-        (c.includes('message') ||
-         c.includes('query')   ||
-         c.includes('response'))
-      )
-      .slice(0, 15)
-    console.warn(
-      '[Cortex:Gemini] No user messages found.',
-      'Available classes:', classes
-    )
   }
 
   let asstEls: Element[] = []
@@ -205,7 +190,7 @@ async function scrapeHistoryFromDOM(): Promise<void> {
     messages.push({ role, content, timestamp: Date.now() })
   }
 
-  if (messages.length === 0) { console.warn('[Cortex:Gemini] No messages found — selectors may need update'); return }
+  if (messages.length === 0) return
 
   await chrome.storage.local.set({
     [STORAGE_KEYS.history]: messages,
