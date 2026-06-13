@@ -110,7 +110,7 @@ export async function handleCompareStart(
   }).catch(err => console.warn('[Cortex] Compare inject failed:', err))
 
   // Scrape the target tab from the background - independent of its content script.
-  void streamTargetResponse(targetTabId, sourceTabId, targetProvider)
+  void streamTargetResponse(targetTabId, sourceTabId, targetProvider, prompt)
 }
 
 export async function handleCompareResult(

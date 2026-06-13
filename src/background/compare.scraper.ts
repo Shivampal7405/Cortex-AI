@@ -5,21 +5,21 @@
  * depend on the target tab's content script being loaded or fresh after an
  * extension reload. Streams response deltas to the source tab.
  *
- * Robustness: tries provider-specific selectors first (innerText pierces open
- * shadow roots), and falls back to the delta of the whole page's innerText since
- * scraping began, so capture still works when a site changes its DOM classes.
+ * Robustness: tries provider selectors first (innerText pierces open shadow
+ * roots); otherwise falls back to the delta of the whole page's innerText since
+ * BEFORE the prompt was submitted, with the echoed prompt stripped out. The
+ * baseline is captured immediately so fast replies are not missed.
  */
 import type { Provider } from '../shared/types'
 
 const RESPONSE_SELECTORS: Record<Provider, string[]> = {
-  claude:  ['.font-claude-message', '.font-claude-response', '[data-testid="assistant-message"]', '[data-is-streaming]'],
+  claude:  ['.font-claude-message', '.font-claude-response', '[data-testid="assistant-message"]'],
   chatgpt: ['[data-message-author-role="assistant"]', '.markdown.prose'],
   gemini:  ['model-response', '.model-response-text', 'message-content'],
-  grok:    ['[data-testid="grok-message"]', '[class*="ChatMessage"]', 'article'],
+  grok:    ['[data-testid="grok-message"]', '.message-bubble', '[class*="response-content"]', '[class*="markdown"]', '.prose', 'article'],
 }
 
-// Injected into the target tab - must be fully self-contained. Returns both the
-// best selector match and the full page text so the caller can fall back.
+// Injected into the target tab - must be fully self-contained.
 function scrapeResponse(selectors: string[]): { text: string; body: string } {
   let text = ''
   for (const sel of selectors) {
@@ -34,48 +34,55 @@ function scrapeResponse(selectors: string[]): { text: string; body: string } {
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
+async function scrapeOnce(tabId: number, selectors: string[]): Promise<{ text: string; body: string } | null> {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func:   scrapeResponse,
+      args:   [selectors],
+    })
+    return (results?.[0]?.result as { text: string; body: string } | undefined) ?? null
+  } catch {
+    return null  // tab closed or navigated
+  }
+}
+
 export async function streamTargetResponse(
   tabId:       number,
   sourceTabId: number,
   provider:    Provider,
+  prompt:      string,
 ): Promise<void> {
   const selectors = RESPONSE_SELECTORS[provider] ?? []
   let lastSent = 0
   let stable   = 0
-  let baseline = -1
-  let mode: '' | 'sel' | 'body' = ''   // commit to one source to avoid garbled deltas
+  let mode: '' | 'sel' | 'body' = ''
 
-  await delay(1500)  // allow the prompt to submit and the reply to begin
+  // Baseline NOW, before the prompt is echoed and the reply renders.
+  const first = await scrapeOnce(tabId, selectors)
+  const baseline = first ? first.body.length : 0
 
-  for (let i = 0; i < 80; i++) {          // up to ~32s
+  for (let i = 0; i < 90; i++) {          // up to ~36s
     await delay(400)
+    const scrape = await scrapeOnce(tabId, selectors)
+    if (!scrape) break
 
-    let scrape: { text: string; body: string } | undefined
-    try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId },
-        func:   scrapeResponse,
-        args:   [selectors],
-      })
-      scrape = results?.[0]?.result as { text: string; body: string } | undefined
-    } catch {
-      break  // target tab closed or navigated away
-    }
-    if (!scrape) continue
-    if (baseline < 0) baseline = scrape.body.length
+    // Selector text (the assistant message) is cleanest; ignore it if it is just
+    // the echoed prompt. Otherwise use page-text delta with the prompt removed.
+    const selText  = scrape.text && scrape.text !== prompt ? scrape.text : ''
+    let   bodyText = scrape.body.length > baseline ? scrape.body.slice(baseline).trim() : ''
+    if (bodyText && prompt) bodyText = bodyText.replace(prompt, '').trim()
 
-    // Decide once where the response text comes from. Prefer the selector; if it
-    // produces nothing within the first ~2s, fall back to page-text delta.
     let current = ''
-    if (mode === 'sel')       current = scrape.text
-    else if (mode === 'body') current = scrape.body.length > baseline ? scrape.body.slice(baseline).trim() : ''
-    else if (scrape.text)     { mode = 'sel';  current = scrape.text }
-    else if (i >= 5 && scrape.body.length > baseline) { mode = 'body'; current = scrape.body.slice(baseline).trim() }
+    if (mode === 'sel')        current = selText
+    else if (mode === 'body')  current = bodyText
+    else if (selText)          { mode = 'sel';  current = selText }
+    else if (i >= 3 && bodyText) { mode = 'body'; current = bodyText }
 
     if (current.length > lastSent) {
       const chunk = current.slice(lastSent)
+      if (lastSent === 0) console.log('[Cortex] compare capture via', mode, 'for', provider)
       lastSent = current.length
-      if (lastSent === chunk.length) console.log('[Cortex] compare capture started via', mode, 'for', provider)
       chrome.tabs.sendMessage(sourceTabId, { type: 'COMPARE_RESULT', chunk, provider }).catch(() => {})
       stable = 0
     } else if (lastSent > 0 && ++stable >= 6) {
