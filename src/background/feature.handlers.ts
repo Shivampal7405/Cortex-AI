@@ -30,13 +30,14 @@ function queryPatternsFor(provider: string): string[] {
 }
 
 // Injected into the compare target tab (MAIN world) - must stay self-contained.
-// Retries finding the input so it works on freshly opened / slow-rendering tabs.
+// Finds the composer (incl. inside shadow DOM), retries for slow/new tabs, types
+// the prompt, and submits. Logs to the target page console for diagnostics.
 function injectAndSubmitPrompt(promptText: string, prov: string): void {
   const selectors: Record<string, string[]> = {
     claude:  ['.ProseMirror', 'div[contenteditable="true"]'],
     chatgpt: ['#prompt-textarea', 'textarea[data-id]', 'textarea'],
     gemini:  ['rich-textarea textarea', 'textarea', '.ql-editor', '[contenteditable="true"]'],
-    grok:    ['textarea', 'div[contenteditable="true"]', '[contenteditable="true"]'],
+    grok:    ['textarea', 'div[contenteditable="true"]', '[contenteditable="true"]', '[role="textbox"]'],
   }
   const submitSelectors = [
     '[data-testid="send-button"]', '[data-testid*="send" i]',
@@ -45,32 +46,53 @@ function injectAndSubmitPrompt(promptText: string, prov: string): void {
     'button[type="submit"]', 'form button[type="submit"]',
   ].join(',')
 
+  const isVisible = (e: Element): boolean =>
+    !!(e as HTMLElement).offsetParent || e.getClientRects().length > 0
+
   const findInput = (): HTMLElement | null => {
     for (const sel of selectors[prov] ?? []) {
-      const e = document.querySelector(sel) as HTMLElement | null
-      if (e) return e
+      const els = Array.from(document.querySelectorAll(sel)).filter(isVisible) as HTMLElement[]
+      if (els.length) return els[els.length - 1] ?? null
     }
-    return null
+    // Shadow-DOM walk - querySelector cannot pierce shadow roots.
+    const found: HTMLElement[] = []
+    const walk = (root: Document | ShadowRoot): void => {
+      root.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"]').forEach(e => {
+        if (isVisible(e)) found.push(e as HTMLElement)
+      })
+      root.querySelectorAll('*').forEach(e => {
+        const sr = (e as HTMLElement).shadowRoot
+        if (sr) walk(sr)
+      })
+    }
+    walk(document)
+    return found.length ? (found[found.length - 1] ?? null) : null
   }
 
   let tries = 0
   const attempt = (): void => {
     const el = findInput()
     if (!el) {
-      if (++tries < 40) setTimeout(attempt, 300)   // retry up to ~12s for new/slow tabs
+      if (++tries < 40) { setTimeout(attempt, 300); return }
+      console.warn('[Cortex] compare: input not found for', prov)
       return
     }
+    console.log('[Cortex] compare: filling', prov, 'input <' + el.tagName.toLowerCase() + '>')
     el.focus()
-    if (el instanceof HTMLTextAreaElement) {
-      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    el.click()
+    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
       setter?.call(el, promptText)
       el.dispatchEvent(new Event('input',  { bubbles: true }))
       el.dispatchEvent(new Event('change', { bubbles: true }))
-    } else if (el.isContentEditable) {
-      // ProseMirror (Claude) ignores direct innerText - use execCommand for real input events.
+    } else {
       document.execCommand('selectAll', false, undefined)
-      document.execCommand('insertText', false, promptText)
-      el.dispatchEvent(new InputEvent('input', { bubbles: true, data: promptText }))
+      const ok = document.execCommand('insertText', false, promptText)
+      if (!ok) {
+        el.textContent = promptText
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, data: promptText }))
+      }
     }
     setTimeout(() => {
       const btn = document.querySelector(submitSelectors) as HTMLButtonElement | null
@@ -96,7 +118,6 @@ export async function handleCompareStart(
 
   if (targetTabs.length === 0) {
     const newTab = await chrome.tabs.create({ url: OPEN_URLS[targetProvider] ?? '', active: false })
-    // Wait for load, but never hang: resolve on complete or after 6s.
     await new Promise<void>((resolve) => {
       let done = false
       const finish = () => {
@@ -114,7 +135,6 @@ export async function handleCompareStart(
     targetTabs = [newTab]
   }
 
-  // Prefer the active / most-recently-used matching tab.
   const target = [...targetTabs].sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1
     return (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0)
@@ -130,7 +150,6 @@ export async function handleCompareStart(
     world:  'MAIN',
   }).catch(err => console.warn('[Cortex] Compare inject failed:', err))
 
-  // Scrape the target tab from the background - independent of its content script.
   void streamTargetResponse(targetTabId, sourceTabId, targetProvider, prompt)
 }
 
