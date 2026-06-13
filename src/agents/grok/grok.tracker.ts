@@ -29,6 +29,7 @@ function getConversationIdFromURL(): string | null {
 }
 
 async function saveConversationId(id: string): Promise<void> {
+  if (!chrome.runtime?.id) return
   await chrome.storage.local.set({
     [STORAGE_KEYS.convId]:   id,
     [STORAGE_KEYS.lastSeen]: Date.now(),
@@ -144,6 +145,7 @@ function extractGrokHistory(body: unknown): ChatMessage[] {
 }
 
 async function scrapeHistoryFromDOM(): Promise<void> {
+  if (!chrome.runtime?.id) return
   const messages: ChatMessage[] = []
 
   const GROK_SELECTORS = [

@@ -26,6 +26,7 @@ function getConversationId(): string | null {
 }
 
 async function saveConversationId(id: string): Promise<void> {
+  if (!chrome.runtime?.id) return
   await chrome.storage.local.set({
     [STORAGE_KEYS.convId]:   id,
     [STORAGE_KEYS.lastSeen]: Date.now(),
