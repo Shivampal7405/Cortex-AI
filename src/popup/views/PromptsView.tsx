@@ -118,7 +118,7 @@ export function PromptsView() {
       let provider = 'claude'
       if (url.includes('chatgpt.com')) provider = 'chatgpt'
       else if (url.includes('gemini.google')) provider = 'gemini'
-      else if (url.includes('x.com')) provider = 'grok'
+      else if (url.includes('grok.com') || url.includes('x.com/i/grok') || url.includes('x.com/grok')) provider = 'grok'
 
       chrome.runtime.sendMessage({
         type: 'INJECT_PROMPT',

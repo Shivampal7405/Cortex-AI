@@ -15,7 +15,16 @@ import type { Provider } from '../shared/types'
 const RESPONSE_SELECTORS: Record<Provider, string[]> = {
   claude:  ['.font-claude-message', '.font-claude-response', '[data-testid="assistant-message"]'],
   chatgpt: ['[data-message-author-role="assistant"]', '.markdown.prose'],
-  gemini:  ['model-response', '.model-response-text', 'message-content'],
+  gemini:  [
+    'model-response .markdown',
+    'model-response .message-text',
+    '.response-container .markdown',
+    'message-content .markdown',
+    'model-response',
+    '.message-text',
+    '.model-response-text',
+    '.assistant-messages-primary-container',
+  ],
   grok:    ['[data-testid="grok-message"]', '.message-bubble', '[class*="response-content"]', '[class*="markdown"]', '.prose', 'article'],
 }
 
@@ -72,8 +81,13 @@ export async function streamTargetResponse(
     const selText  = scrape.text && scrape.text !== prompt ? scrape.text : ''
     let   bodyText = scrape.body.length > baseline ? scrape.body.slice(baseline).trim() : ''
     if (bodyText && prompt) bodyText = bodyText.replace(prompt, '').trim()
-    // Strip our own floating launcher label so it is never mistaken for a reply.
-    if (bodyText) bodyText = bodyText.replace(/⇄\s*Compare/g, '').replace(/^\s*Compare\s*/i, '').trim()
+    // Strip UI noise so it is never mistaken for a real reply.
+    if (bodyText) bodyText = bodyText
+      .replace(/⇄\s*Compare/g, '')
+      .replace(/^\s*Compare\s*/i, '')
+      .replace(/^Gemini\s+said[\s:.]*/i, '')
+      .replace(/^Gemini[\s:.]*/i, '')
+      .trim()
 
     let current = ''
     if (mode === 'sel')        current = selText
@@ -88,8 +102,9 @@ export async function streamTargetResponse(
       lastSent = current.length
       chrome.tabs.sendMessage(sourceTabId, { type: 'COMPARE_RESULT', chunk, provider }).catch(() => {})
       stable = 0
-    } else if (lastSent > 0 && ++stable >= 6) {
-      break  // ~2.4s with no growth = response finished
+    } else if (lastSent > 50 && ++stable >= 6) {
+      // Require >50 chars before declaring done — avoids quitting on a UI label.
+      break
     }
   }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Provider } from '../../shared/types'
 import { PROVIDER_COLORS } from '../../shared/constants'
+import { getComparePrompt } from './compare.selectors'
 
 interface CompareButtonProps {
   provider: Provider
@@ -20,23 +21,8 @@ export function CompareButton({ provider }: CompareButtonProps) {
 
   const startCompare = (targetProvider: Provider) => {
     setLoading(targetProvider)
-    
-    // Get current Claude input text OR last user message from DOM
-    // The prompt says "Get current Claude input text OR last user message from DOM"
-    // For Claude, the input is in a contenteditable div inside a Prosemirror editor
-    let prompt = ''
-    const inputEl = document.querySelector('.ProseMirror') as HTMLElement
-    if (inputEl && inputEl.textContent?.trim()) {
-      prompt = inputEl.textContent.trim()
-    } else {
-      // Fallback to last user message
-      const msgs = document.querySelectorAll('.font-user-message')
-      const last = msgs[msgs.length - 1]
-      if (last?.textContent) {
-        prompt = last.textContent.trim()
-      }
-    }
 
+    const prompt = getComparePrompt(provider)
     if (!prompt) {
       alert("No prompt found to compare. Please type something or have a previous message.")
       setLoading(null)

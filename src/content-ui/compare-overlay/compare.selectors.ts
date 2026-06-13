@@ -12,7 +12,16 @@ import type { Provider } from '../../shared/types'
 export const RESPONSE_SELECTORS: Record<Provider, string[]> = {
   claude:  ['.font-claude-message', '[data-testid="assistant-message"]', '[data-is-streaming="false"]'],
   chatgpt: ['[data-message-author-role="assistant"]', '.markdown.prose'],
-  gemini:  ['model-response', '.model-response-text', 'message-content'],
+  gemini:  [
+    'model-response .markdown',
+    'model-response .message-text',
+    '.response-container .markdown',
+    'message-content .markdown',
+    'model-response',
+    '.message-text',
+    '.model-response-text',
+    '.assistant-messages-primary-container',
+  ],
   grok:    ['[data-testid="grok-message"]', '[class*="ChatMessage"]', 'article'],
 }
 
@@ -26,10 +35,24 @@ const INPUT_SELECTORS: Record<Provider, string[]> = {
 
 // Last user message — fallback prompt when the input box is empty.
 const USER_SELECTORS: Record<Provider, string[]> = {
-  claude:  ['.font-user-message', '[data-testid="user-message"]'],
+  claude:  [
+    '[data-testid="user-message"]',
+    '.font-user-message',
+    '[data-testid="human-turn"]',
+    '.human-turn',
+    '[class*="user-message"]',
+    '[class*="human-turn"]',
+  ],
   chatgpt: ['[data-message-author-role="user"]'],
-  gemini:  ['.user-query-text', '.query-text', '[data-message-author-role="user"]'],
-  grok:    ['[data-testid="user-message"]'],
+  gemini:  [
+    'user-query',
+    '[data-test-id="user-query"]',
+    '.user-query-bubble-with-background',
+    '.user-query-text',
+    '.query-text',
+    '[data-message-author-role="user"]',
+  ],
+  grok:    ['[data-testid="user-message"]', '[class*="UserMessage"]'],
 }
 
 function lastText(selectors: string[]): string {
