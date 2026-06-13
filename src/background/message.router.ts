@@ -11,8 +11,9 @@ import { buildContextBlock }     from '../memory/memory.injector'
 import { saveFact, getAllFacts } from '../memory/memory.store'
 import {
   handleCompareStart, handleCompareResult,
-  getPrompts, savePrompt, deletePrompt, injectPrompt,
+  getPrompts, savePrompt, deletePrompt, injectPrompt, queryPatternsFor,
 } from './feature.handlers'
+import { injectComposer } from './inject.dom'
 import type { Provider, SavedPrompt } from '../shared/types'
 import type { MemoryFact }            from '../memory/memory.types'
 
@@ -71,14 +72,8 @@ export function initMessageRouter(): void {
 
         case 'INJECT_MEMORY': {
           const provider = message.provider
-          const urlMap: Record<string, string> = {
-            claude:  'https://claude.ai/*',
-            chatgpt: 'https://chatgpt.com/*',
-            gemini:  'https://gemini.google.com/*',
-            grok:    'https://grok.com/*',
-          }
           ;(async () => {
-            const tabs = await chrome.tabs.query({ url: urlMap[provider] ?? '' })
+            const tabs = await chrome.tabs.query({ url: queryPatternsFor(provider) })
             if (!tabs[0]?.id) {
               sendResponse({ ok: false, error: `Open ${provider} in a tab first` })
               return
@@ -90,10 +85,9 @@ export function initMessageRouter(): void {
             }
             await chrome.scripting.executeScript({
               target: { tabId: tabs[0].id },
-              func:   (block: string, prov: string) => {
-                window.postMessage({ type: 'CORTEX_INJECT_MEMORY', block, provider: prov }, '*')
-              },
-              args: [contextBlock, provider],
+              func:   injectComposer,
+              args:   [contextBlock, provider, false],
+              world:  'MAIN',
             })
             const factCount = (contextBlock.match(/^- /gm) ?? []).length
             sendResponse({ ok: true, factCount })

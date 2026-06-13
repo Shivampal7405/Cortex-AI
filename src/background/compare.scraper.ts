@@ -72,12 +72,15 @@ export async function streamTargetResponse(
     const selText  = scrape.text && scrape.text !== prompt ? scrape.text : ''
     let   bodyText = scrape.body.length > baseline ? scrape.body.slice(baseline).trim() : ''
     if (bodyText && prompt) bodyText = bodyText.replace(prompt, '').trim()
+    // Strip our own floating launcher label so it is never mistaken for a reply.
+    if (bodyText) bodyText = bodyText.replace(/⇄\s*Compare/g, '').replace(/^\s*Compare\s*/i, '').trim()
 
     let current = ''
     if (mode === 'sel')        current = selText
     else if (mode === 'body')  current = bodyText
     else if (selText)          { mode = 'sel';  current = selText }
-    else if (i >= 3 && bodyText) { mode = 'body'; current = bodyText }
+    // Give the real assistant selector ~4s before falling back to page text.
+    else if (i >= 10 && bodyText) { mode = 'body'; current = bodyText }
 
     if (current.length > lastSent) {
       const chunk = current.slice(lastSent)

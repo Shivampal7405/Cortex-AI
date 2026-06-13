@@ -7,6 +7,7 @@
 
 import type { Provider, SavedPrompt } from '../shared/types'
 import { streamTargetResponse } from './compare.scraper'
+import { injectComposer } from './inject.dom'
 
 const PROMPTS_KEY = 'cortex_prompts'
 
@@ -24,85 +25,9 @@ const OPEN_URLS: Record<string, string> = {
 }
 
 // Patterns to find an existing target tab. Grok lives on both domains.
-function queryPatternsFor(provider: string): string[] {
+export function queryPatternsFor(provider: string): string[] {
   if (provider === 'grok') return ['https://grok.com/*', 'https://x.com/*']
   return [TAB_URL_PATTERNS[provider] ?? '']
-}
-
-// Injected into the compare target tab (MAIN world) - must stay self-contained.
-// Finds the composer (incl. inside shadow DOM), retries for slow/new tabs, types
-// the prompt, and submits. Logs to the target page console for diagnostics.
-function injectAndSubmitPrompt(promptText: string, prov: string): void {
-  const selectors: Record<string, string[]> = {
-    claude:  ['.ProseMirror', 'div[contenteditable="true"]'],
-    chatgpt: ['#prompt-textarea', 'textarea[data-id]', 'textarea'],
-    gemini:  ['rich-textarea textarea', 'textarea', '.ql-editor', '[contenteditable="true"]'],
-    grok:    ['textarea', 'div[contenteditable="true"]', '[contenteditable="true"]', '[role="textbox"]'],
-  }
-  const submitSelectors = [
-    '[data-testid="send-button"]', '[data-testid*="send" i]',
-    'button[aria-label*="Send" i]', 'button[aria-label*="submit" i]',
-    'button[jsaction*="send" i]', 'button.send-button',
-    'button[type="submit"]', 'form button[type="submit"]',
-  ].join(',')
-
-  const isVisible = (e: Element): boolean =>
-    !!(e as HTMLElement).offsetParent || e.getClientRects().length > 0
-
-  const findInput = (): HTMLElement | null => {
-    for (const sel of selectors[prov] ?? []) {
-      const els = Array.from(document.querySelectorAll(sel)).filter(isVisible) as HTMLElement[]
-      if (els.length) return els[els.length - 1] ?? null
-    }
-    // Shadow-DOM walk - querySelector cannot pierce shadow roots.
-    const found: HTMLElement[] = []
-    const walk = (root: Document | ShadowRoot): void => {
-      root.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"]').forEach(e => {
-        if (isVisible(e)) found.push(e as HTMLElement)
-      })
-      root.querySelectorAll('*').forEach(e => {
-        const sr = (e as HTMLElement).shadowRoot
-        if (sr) walk(sr)
-      })
-    }
-    walk(document)
-    return found.length ? (found[found.length - 1] ?? null) : null
-  }
-
-  let tries = 0
-  const attempt = (): void => {
-    const el = findInput()
-    if (!el) {
-      if (++tries < 40) { setTimeout(attempt, 300); return }
-      console.warn('[Cortex] compare: input not found for', prov)
-      return
-    }
-    console.log('[Cortex] compare: filling', prov, 'input <' + el.tagName.toLowerCase() + '>')
-    el.focus()
-    el.click()
-    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
-      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
-      setter?.call(el, promptText)
-      el.dispatchEvent(new Event('input',  { bubbles: true }))
-      el.dispatchEvent(new Event('change', { bubbles: true }))
-    } else {
-      document.execCommand('selectAll', false, undefined)
-      const ok = document.execCommand('insertText', false, promptText)
-      if (!ok) {
-        el.textContent = promptText
-        el.dispatchEvent(new InputEvent('input', { bubbles: true, data: promptText }))
-      }
-    }
-    setTimeout(() => {
-      const btn = document.querySelector(submitSelectors) as HTMLButtonElement | null
-      if (btn && !btn.disabled) { btn.click(); return }
-      for (const type of ['keydown', 'keypress', 'keyup']) {
-        el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))
-      }
-    }, 900)
-  }
-  attempt()
 }
 
 export async function handleCompareStart(
@@ -145,11 +70,12 @@ export async function handleCompareStart(
   console.log('[Cortex] compare: injecting into', targetProvider, 'tab', targetTabId)
   await chrome.scripting.executeScript({
     target: { tabId: targetTabId },
-    func:   injectAndSubmitPrompt,
-    args:   [prompt, targetProvider],
+    func:   injectComposer,
+    args:   [prompt, targetProvider, true],
     world:  'MAIN',
   }).catch(err => console.warn('[Cortex] Compare inject failed:', err))
 
+  // Scrape the target tab from the background - independent of its content script.
   void streamTargetResponse(targetTabId, sourceTabId, targetProvider, prompt)
 }
 
@@ -190,14 +116,19 @@ export async function deletePrompt(id: string): Promise<void> {
   await chrome.storage.local.set({ [PROMPTS_KEY]: prompts.filter(p => p.id !== id) })
 }
 
+// Inject a saved prompt straight into the active provider's composer (no submit),
+// directly via executeScript so it works on every provider, not just Claude.
 export async function injectPrompt(content: string, provider: string): Promise<void> {
   const tabs = await chrome.tabs.query({ url: queryPatternsFor(provider) })
-  if (!tabs[0]?.id) return
+  const tab = [...tabs].sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1
+    return (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0)
+  })[0]
+  if (!tab?.id) return
   await chrome.scripting.executeScript({
-    target: { tabId: tabs[0].id },
-    func:   (text: string, prov: string) => {
-      window.postMessage({ type: 'CORTEX_INJECT_MEMORY', block: text, provider: prov }, '*')
-    },
-    args: [content, provider],
+    target: { tabId: tab.id },
+    func:   injectComposer,
+    args:   [content, provider, false],
+    world:  'MAIN',
   }).catch(err => console.warn('[Cortex] Prompt inject failed:', err))
 }
