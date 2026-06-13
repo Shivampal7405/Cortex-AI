@@ -18,6 +18,8 @@ export function MemoryView() {
   const [rebuilding,     setRebuilding]     = useState(false)
   const [rebuildMsg,     setRebuildMsg]     = useState<string | null>(null)
   const [contextSummary, setContextSummary] = useState<string | null>(null)
+  const [injecting,      setInjecting]      = useState(false)
+  const [injectResult,   setInjectResult]   = useState<{ ok: boolean; msg: string } | null>(null)
 
   const loadFacts = async () => {
     try {
@@ -60,7 +62,24 @@ export function MemoryView() {
   const handleConfirm = async (id: string) => { await updateFact(id, { confirmed: true }); loadFacts() }
   const handlePin     = async (id: string, p: boolean) => { await updateFact(id, { pinned: !p, confirmed: true }); loadFacts() }
   const handleDelete  = async (id: string) => { await deleteFact(id); loadFacts() }
-  const handleInject  = () => chrome.runtime.sendMessage({ type: 'INJECT_MEMORY', provider: activeProvider })
+  const handleInject = () => {
+    setInjecting(true)
+    setInjectResult(null)
+    chrome.runtime.sendMessage(
+      { type: 'INJECT_MEMORY', provider: activeProvider },
+      (res: { ok: boolean; factCount?: number; error?: string }) => {
+        setInjecting(false)
+        if (chrome.runtime.lastError) {
+          setInjectResult({ ok: false, msg: 'Extension error — try reloading' })
+        } else if (res?.ok) {
+          setInjectResult({ ok: true, msg: `✓ ${res.factCount ?? 0} facts injected into ${activeProvider}` })
+        } else {
+          setInjectResult({ ok: false, msg: res?.error ?? 'Injection failed' })
+        }
+        setTimeout(() => setInjectResult(null), 4000)
+      }
+    )
+  }
 
   const handleRebuild = () => {
     setRebuilding(true)
@@ -141,9 +160,19 @@ export function MemoryView() {
         </div>
       )}
 
-      <button onClick={handleInject} className="w-full py-2 rounded-lg text-sm font-semibold text-white transition-colors" style={{ backgroundColor: '#7C3AED' }}>
-        Inject memory into {activeProvider} ↗
+      <button
+        onClick={handleInject}
+        disabled={injecting}
+        className="w-full py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-60 disabled:cursor-wait"
+        style={{ backgroundColor: '#7C3AED' }}
+      >
+        {injecting ? '⟳ Injecting…' : `Inject memory into ${activeProvider} ↗`}
       </button>
+      {injectResult && (
+        <div className={`text-center text-xs font-medium py-1 ${injectResult.ok ? 'text-green-500' : 'text-red-400'}`}>
+          {injectResult.msg}
+        </div>
+      )}
 
       <ProjectsSection />
     </div>

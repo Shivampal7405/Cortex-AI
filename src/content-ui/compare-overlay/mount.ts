@@ -6,33 +6,35 @@ import type { Provider } from '../../shared/types'
 let overlayRoot: Root | null = null
 
 export function mountCompareOverlay(
-  claudeResponse: string,
+  sourceProvider: Provider,
+  sourceResponse: string,
   targetProvider: Provider
 ): void {
   unmountCompareOverlay()
 
   const container = document.createElement('div')
   container.id = 'cortex-compare-overlay'
-  
+
   // Make sure it sits on top of everything
   container.style.position = 'fixed'
   container.style.inset = '0'
   container.style.zIndex = '999999'
-  
+
   document.body.appendChild(container)
 
   overlayRoot = createRoot(container)
   overlayRoot.render(
     React.createElement(CompareOverlay, {
-      claudeResponse,
+      sourceProvider,
+      sourceResponse,
       targetProvider,
       onClose: unmountCompareOverlay,
       onContinueWith: (provider) => {
         unmountCompareOverlay()
-        if (provider !== 'claude') {
+        if (provider !== sourceProvider) {
           chrome.runtime.sendMessage({
             type: 'TRANSFER_CONTEXT',
-            from: 'claude',
+            from: sourceProvider,
             to:   provider,
           })
         }

@@ -6,6 +6,10 @@
  * Zero UI. Runs silently at document_idle.
  */
 
+import { emitActivity } from '../shared/activity'
+import { mountCompareLauncher } from '../../content-ui/compare-overlay/mountLauncher'
+import { initCompareSource, initCompareTarget } from '../../content-ui/compare-overlay/compareHost'
+
 export {}
 
 const STORAGE_KEYS = {
@@ -57,6 +61,7 @@ function interceptGeminiFetch(): void {
         await chrome.storage.local.set({
           [STORAGE_KEYS.history]: messages,
         })
+        emitActivity('gemini', 'gemini-2.0-flash', messages)
         console.log(
           '[Cortex:Gemini] History cached via API:',
           messages.length,
@@ -207,6 +212,7 @@ async function scrapeHistoryFromDOM(): Promise<void> {
   await chrome.storage.local.set({
     [STORAGE_KEYS.history]: messages,
   })
+  emitActivity('gemini', 'gemini-2.0-flash', messages)
 
   console.log(
     '[Cortex:Gemini] History cached via DOM:',
@@ -234,87 +240,6 @@ function watchForNewMessages(): void {
   }).observe(document.body, { childList: true, subtree: true, characterData: true })
 }
 
-async function checkAndHandleCompareMode(
-  responseText: string,
-  isDone: boolean
-): Promise<boolean> {
-  const storage = await chrome.storage.local.get('compare_mode')
-  const mode = storage['compare_mode'] as {
-    active: boolean
-    target: string
-  } | null
-
-  const thisProvider = 'gemini'
-
-  if (!mode?.active || mode.target !== thisProvider) return false
-
-  chrome.runtime.sendMessage({
-    type:     'COMPARE_RESULT',
-    provider: thisProvider,
-    chunk:    responseText,
-    done:     isDone,
-  }).catch(() => {})
-
-  if (isDone) {
-    chrome.storage.local.remove('compare_mode')
-  }
-  return true
-}
-
-let compareObserver: MutationObserver | null = null
-
-function watchForCompareMode(): void {
-  setInterval(async () => {
-    const storage = await chrome.storage.local.get('compare_mode')
-    const mode = storage['compare_mode'] as { active: boolean; target: string } | null
-    if (mode?.active && mode.target === 'gemini') {
-      if (!compareObserver) {
-        let lastSentLength = 0
-        let doneTimeout: ReturnType<typeof setTimeout> | null = null
-        
-        compareObserver = new MutationObserver(() => {
-          const ASST_SELECTORS = [
-            '.model-response-text',
-            '.response-content p',
-            '[data-message-author-role="model"]',
-            'model-response .response-content',
-            '[class*="ModelResponse"]',
-            '[class*="AiResponse"]',
-            'message-content',
-          ]
-          
-          let asstEls: Element[] = []
-          for (const sel of ASST_SELECTORS) {
-            const found = document.querySelectorAll(sel)
-            if (found.length > 0) {
-              asstEls = Array.from(found)
-              break
-            }
-          }
-          
-          const lastMsg = asstEls[asstEls.length - 1]
-          if (lastMsg) {
-            const text = lastMsg.textContent || ''
-            const newText = text.slice(lastSentLength)
-            if (newText) {
-              lastSentLength = text.length
-              checkAndHandleCompareMode(newText, false)
-              
-              if (doneTimeout) clearTimeout(doneTimeout)
-              doneTimeout = setTimeout(() => {
-                checkAndHandleCompareMode('', true)
-                compareObserver?.disconnect()
-                compareObserver = null
-              }, 2000)
-            }
-          }
-        })
-        compareObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
-      }
-    }
-  }, 1000)
-}
-
 function init(): void {
   console.log('[Cortex:Gemini] Tracker initialized')
   interceptGeminiFetch()
@@ -323,7 +248,11 @@ function init(): void {
   setTimeout(() => scrapeHistoryFromDOM(), 2000)
   watchURLChanges()
   watchForNewMessages()
-  watchForCompareMode()
+
+  // Cross-LLM compare: source (floating launcher) + target (response streamer)
+  mountCompareLauncher('gemini')
+  initCompareSource('gemini')
+  initCompareTarget('gemini')
 }
 
 init()

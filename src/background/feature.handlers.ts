@@ -25,29 +25,39 @@ const OPEN_URLS: Record<string, string> = {
 // Injected into the compare target tab (MAIN world) — must stay self-contained
 function injectAndSubmitPrompt(promptText: string, prov: string): void {
   const selectors: Record<string, string[]> = {
-    chatgpt: ['#prompt-textarea', 'textarea[data-id]'],
-    gemini:  ['.ql-editor', '[contenteditable="true"]'],
-    grok:    ['[data-testid="tweetTextarea_0"]', 'textarea'],
+    claude:  ['.ProseMirror', 'div[contenteditable="true"]'],
+    chatgpt: ['#prompt-textarea', 'textarea[data-id]', 'textarea'],
+    // Gemini uses a <rich-textarea> custom element; its inner textarea is accessible
+    gemini:  ['rich-textarea textarea', 'textarea', '.ql-editor', '[contenteditable="true"]'],
+    grok:    ['[data-testid="tweetTextarea_0"]', 'textarea', '[contenteditable="true"]'],
   }
+  const submitSelectors = [
+    '[data-testid="send-button"]',
+    'button[aria-label*="Send" i]',
+    'button[aria-label*="send" i]',
+    'button[jsaction*="send" i]',
+    'button.send-button',
+    'form button[type="submit"]',
+  ].join(',')
+
   for (const sel of selectors[prov] ?? []) {
     const el = document.querySelector(sel) as HTMLElement | null
     if (!el) continue
     el.focus()
-    if (el.contentEditable === 'true') {
-      el.innerText = promptText
-      el.dispatchEvent(new InputEvent('input', { bubbles: true }))
-    } else if (el instanceof HTMLTextAreaElement) {
+    if (el instanceof HTMLTextAreaElement) {
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       setter?.call(el, promptText)
-      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('input',  { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    } else if (el.isContentEditable) {
+      el.innerText = promptText
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, data: promptText }))
     }
     setTimeout(() => {
-      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }))
-      const submitBtn = document.querySelector(
-        '[data-testid="send-button"], button[aria-label*="send" i], button[aria-label*="Send" i], form button[type="submit"]'
-      ) as HTMLButtonElement | null
-      setTimeout(() => submitBtn?.click(), 200)
-    }, 300)
+      const btn = document.querySelector(submitSelectors) as HTMLButtonElement | null
+      if (btn) { btn.click() }
+      else { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true })) }
+    }, 500)
     return
   }
 }

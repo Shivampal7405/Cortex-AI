@@ -1,4 +1,9 @@
-import { Provider } from '../../shared/types'
+/**
+ * CompareToolbar.tsx
+ * Header bar for the compare overlay — provider badges and close button.
+ * Self-contained inline styles; no Tailwind (overlay has no Shadow DOM).
+ */
+import type { Provider } from '../../shared/types'
 
 interface CompareToolbarProps {
   leftProvider:  Provider
@@ -6,49 +11,54 @@ interface CompareToolbarProps {
   onClose:       () => void
 }
 
-const PROVIDER_NAMES: Record<Provider, string> = {
-  claude:  'Claude',
-  chatgpt: 'ChatGPT',
-  gemini:  'Gemini',
-  grok:    'Grok',
+const NAMES: Record<Provider, string> = {
+  claude: 'Claude', chatgpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok',
 }
-
-const PROVIDER_COLORS: Record<Provider, string> = {
-  claude:  '#D97706',
-  chatgpt: '#10A37F',
-  gemini:  '#4285F4',
-  grok:    '#6B7280',
+const COLORS: Record<Provider, string> = {
+  claude: '#D97706', chatgpt: '#10A37F', gemini: '#4285F4', grok: '#9B59B6',
 }
 
 export function CompareToolbar({ leftProvider, rightProvider, onClose }: CompareToolbarProps) {
   return (
-    <div className="flex items-center justify-between px-6 h-14 border-b border-gray-200 dark:border-gray-800 shrink-0 bg-[#f9f9f9] dark:bg-[#1a1a1a] text-gray-900 dark:text-gray-100 rounded-t-xl">
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">Compare</span>
-        <div className="h-4 w-px bg-gray-300 dark:bg-gray-700" />
-        
-        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-700 shadow-sm">
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: PROVIDER_COLORS[leftProvider] }} />
-            <span className="text-sm font-semibold">{PROVIDER_NAMES[leftProvider]}</span>
-          </div>
-          
-          <span className="text-gray-400 font-bold mx-1">⇄</span>
-          
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: PROVIDER_COLORS[rightProvider] }} />
-            <span className="text-sm font-semibold">{PROVIDER_NAMES[rightProvider]}</span>
-          </div>
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '0 20px', height: '52px', flexShrink: 0,
+      backgroundColor: '#111111',
+      borderBottom: '1px solid rgba(255,255,255,0.07)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span style={{
+          fontSize: '10px', fontWeight: 700, color: '#555',
+          letterSpacing: '0.08em', textTransform: 'uppercase',
+        }}>Compare</span>
+
+        <div style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255,255,255,0.1)' }} />
+
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          backgroundColor: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          padding: '4px 12px', borderRadius: '100px',
+        }}>
+          <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: COLORS[leftProvider] }} />
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#efefef' }}>{NAMES[leftProvider]}</span>
+          <span style={{ color: '#444', fontWeight: 700, margin: '0 2px' }}>⇄</span>
+          <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: COLORS[rightProvider] }} />
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#efefef' }}>{NAMES[rightProvider]}</span>
         </div>
       </div>
 
       <button
         onClick={onClose}
-        className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-purple-500/50"
         aria-label="Close"
-      >
-        <span className="text-xl font-bold leading-none mb-0.5">×</span>
-      </button>
+        style={{
+          width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: 'none', borderRadius: '50%', cursor: 'pointer', fontSize: '20px', lineHeight: 1,
+          backgroundColor: 'transparent', color: '#666', fontFamily: 'inherit',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff' }}
+        onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#666' }}
+      >×</button>
     </div>
   )
 }

@@ -9,46 +9,31 @@ import { useState, useEffect } from 'react'
 import { Eye, EyeOff, CheckCircle, Loader2 } from 'lucide-react'
 
 const API_PROVIDERS = [
-  { id: 'claude',  label: 'Claude API Key',  placeholder: 'sk-ant-...', hint: 'Used for smart memory extraction (cheapest)' },
-  { id: 'openai',  label: 'OpenAI API Key',  placeholder: 'sk-...',     hint: 'Fallback if no Claude key'                   },
-  { id: 'gemini',  label: 'Gemini API Key',  placeholder: 'AIza...',    hint: 'Free tier available'                         },
+  { id: 'groq',   label: 'Groq API Key',      placeholder: 'gsk_...',   hint: 'Free tier — Llama 3.3 70B (fastest, recommended)' },
+  { id: 'openai', label: 'OpenAI API Key',     placeholder: 'sk-...',    hint: 'Fallback if no Groq key'                          },
+  { id: 'gemini', label: 'Gemini API Key',     placeholder: 'AIza...',   hint: 'Free tier available'                              },
+  { id: 'nvidia', label: 'NVIDIA NIM API Key', placeholder: 'nvapi-...', hint: 'Free tier — Llama 3.1 8B'                        },
 ] as const
 
 async function testApiKey(
-  provider: 'claude' | 'openai' | 'gemini',
+  provider: 'groq' | 'openai' | 'gemini' | 'nvidia',
   key:      string
 ): Promise<{ ok: boolean; message: string }> {
 
   try {
-    if (provider === 'claude') {
-      const res = await fetch(
-        'https://api.anthropic.com/v1/messages',
-        {
-          method:  'POST',
-          headers: {
-            'Content-Type':      'application/json',
-            'x-api-key':         key.trim(),
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model:      'claude-haiku-4-5',
-            max_tokens: 5,
-            messages:   [{ role: 'user', content: 'Hi' }],
-          }),
-        }
-      )
+    if (provider === 'groq') {
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: { 'Authorization': `Bearer ${key.trim()}` },
+      })
       return res.ok
         ? { ok: true,  message: '✓ Connected' }
         : { ok: false, message: `✗ Failed (${res.status})` }
     }
 
     if (provider === 'openai') {
-      const res = await fetch(
-        'https://api.openai.com/v1/models',
-        {
-          headers: { 'Authorization': `Bearer ${key.trim()}` },
-        }
-      )
+      const res = await fetch('https://api.openai.com/v1/models', {
+        headers: { 'Authorization': `Bearer ${key.trim()}` },
+      })
       return res.ok
         ? { ok: true,  message: '✓ Connected' }
         : { ok: false, message: `✗ Failed (${res.status})` }
@@ -63,11 +48,18 @@ async function testApiKey(
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{
-            parts: [{ text: 'Reply: OK' }]
-          }],
+          contents: [{ parts: [{ text: 'Reply: OK' }] }],
           generationConfig: { maxOutputTokens: 5 },
         }),
+      })
+      return res.ok
+        ? { ok: true,  message: '✓ Connected' }
+        : { ok: false, message: `✗ Failed (${res.status})` }
+    }
+
+    if (provider === 'nvidia') {
+      const res = await fetch('https://integrate.api.nvidia.com/v1/models', {
+        headers: { 'Authorization': `Bearer ${key.trim()}` },
       })
       return res.ok
         ? { ok: true,  message: '✓ Connected' }
@@ -89,7 +81,7 @@ export function Options() {
 
   useEffect(() => {
     chrome.storage.local.get(
-      ['api_key_claude', 'api_key_openai', 'api_key_gemini'],
+      ['api_key_groq', 'api_key_openai', 'api_key_gemini', 'api_key_nvidia'],
       (r) => {
         const loaded: Record<string, string> = {}
         for (const p of API_PROVIDERS) {
@@ -111,7 +103,7 @@ export function Options() {
     if (!key) { setTestResult(prev => ({ ...prev, [id]: '✗ Enter a key first' })); return }
     setTesting(prev => ({ ...prev, [id]: true }))
     setTestResult(prev => ({ ...prev, [id]: '' }))
-    const result = await testApiKey(id as 'claude' | 'openai' | 'gemini', key)
+    const result = await testApiKey(id as 'groq' | 'openai' | 'gemini' | 'nvidia', key)
     setTesting(prev => ({ ...prev, [id]: false }))
     setTestResult(prev => ({ ...prev, [id]: result.message }))
     setTimeout(() => setTestResult(prev => ({ ...prev, [id]: '' })), 5000)

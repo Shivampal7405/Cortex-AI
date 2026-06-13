@@ -79,20 +79,26 @@ export function initMessageRouter(): void {
           }
           ;(async () => {
             const tabs = await chrome.tabs.query({ url: urlMap[provider] ?? '' })
-            if (!tabs[0]?.id) return
+            if (!tabs[0]?.id) {
+              sendResponse({ ok: false, error: `Open ${provider} in a tab first` })
+              return
+            }
             const contextBlock = await buildContextBlock()
-            if (!contextBlock) return
+            if (!contextBlock) {
+              sendResponse({ ok: false, error: 'No pinned facts to inject — pin some memory first' })
+              return
+            }
             await chrome.scripting.executeScript({
               target: { tabId: tabs[0].id },
               func:   (block: string, prov: string) => {
-                window.postMessage(
-                  { type: 'CORTEX_INJECT_MEMORY', block, provider: prov }, '*'
-                )
+                window.postMessage({ type: 'CORTEX_INJECT_MEMORY', block, provider: prov }, '*')
               },
               args: [contextBlock, provider],
             })
-          })().catch(err => console.warn('[Cortex] INJECT_MEMORY failed:', err))
-          return false
+            const factCount = (contextBlock.match(/^- /gm) ?? []).length
+            sendResponse({ ok: true, factCount })
+          })().catch(err => sendResponse({ ok: false, error: String(err) }))
+          return true   // keep channel open for async sendResponse
         }
 
         case 'TRANSFER_CONTEXT':

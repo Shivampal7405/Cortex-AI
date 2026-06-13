@@ -10,7 +10,7 @@
  */
 
 import { mountTokenBar } from '../../content-ui/shared/mount'
-import { mountCompareOverlay } from '../../content-ui/compare-overlay/mount'
+import { initCompareSource, initCompareTarget } from '../../content-ui/compare-overlay/compareHost'
 
 // ─── Silence "Extension context invalidated" noise ────────
 // When the extension reloads, the old content script keeps running in the tab.
@@ -65,10 +65,8 @@ function getModelFromDOM(): string {
 // ─── Source 1+2: Usage bars from /usage endpoint ─────────
 
 interface UsageData {
-  pct_5hr: number
-  pct_7day: number
+  pct_5hr:     number
   reset_5hr_at: number
-  reset_7day_at: number
 }
 
 async function fetchUsage(orgId: string): Promise<UsageData | null> {
@@ -81,17 +79,12 @@ async function fetchUsage(orgId: string): Promise<UsageData | null> {
     const data = await res.json()
 
     const fiveHour = data?.message_limit?.five_hour
-    const sevenDay = data?.message_limit?.seven_day
 
     return {
-      pct_5hr:       Math.round((fiveHour?.used_fraction ?? 0) * 100),
-      pct_7day:      Math.round((sevenDay?.used_fraction ?? 0) * 100),
-      reset_5hr_at:  fiveHour?.resetsAt
-                       ? new Date(fiveHour.resetsAt).getTime()
-                       : Date.now() + 5 * 60 * 60 * 1000,
-      reset_7day_at: sevenDay?.resetsAt
-                       ? new Date(sevenDay.resetsAt).getTime()
-                       : Date.now() + 7 * 24 * 60 * 60 * 1000,
+      pct_5hr:      Math.round((fiveHour?.used_fraction ?? 0) * 100),
+      reset_5hr_at: fiveHour?.resetsAt
+                      ? new Date(fiveHour.resetsAt).getTime()
+                      : Date.now() + 5 * 60 * 60 * 1000,
     }
   } catch (err) {
     console.warn('[Cortex] /usage fetch failed:', err)
@@ -108,27 +101,22 @@ function injectInterceptor(): void {
     if (data?.type === 'CORTEX_MESSAGE_LIMIT') {
       const limit = data.data
       const fiveHour = limit?.five_hour
-      const sevenDay = limit?.seven_day
 
-      if (fiveHour || sevenDay) {
+      if (fiveHour) {
         try {
           if (!chrome.runtime?.id) return
           chrome.runtime.sendMessage({
             type: 'USAGE_UPDATE',
             provider: 'claude',
             data: {
-              pct_5hr:  Math.round((fiveHour?.used_fraction ?? 0) * 100),
-              pct_7day: Math.round((sevenDay?.used_fraction ?? 0) * 100),
+              pct_5hr:      Math.round((fiveHour?.used_fraction ?? 0) * 100),
               reset_5hr_at: fiveHour?.resetsAt
                 ? new Date(fiveHour.resetsAt).getTime()
                 : Date.now() + 5 * 60 * 60 * 1000,
-              reset_7day_at: sevenDay?.resetsAt
-                ? new Date(sevenDay.resetsAt).getTime()
-                : Date.now() + 7 * 24 * 60 * 60 * 1000,
-              source: 'sse_exact',  // flag as most accurate
+              source: 'sse_exact',
             }
           }).catch(() => {})
-        } catch (err) {
+        } catch {
           // Ignore context invalidated
         }
       }
@@ -300,9 +288,11 @@ async function init(): Promise<void> {
   if (convId) {
     chrome.storage.local.set({ claude_conv_id: convId })
     console.log('[Cortex] convId saved:', convId)
-  } else {
+  } else if (window.location.pathname.startsWith('/chat')) {
+    // Only warn when we're inside a specific chat URL and somehow missing the ID
     console.warn('[Cortex] No convId in URL:', window.location.pathname)
   }
+  // On home page, new chat page, etc. — silence is correct
 
   // Start SSE interception (catches real-time message_limit events via MAIN world injection)
   injectInterceptor()
@@ -341,45 +331,13 @@ async function init(): Promise<void> {
     if (event.source !== window) return
     if (event.data?.type === 'CORTEX_INJECT_MEMORY') {
       injectIntoInput(event.data.block as string, 'claude')
-    } else if (event.data?.type === 'CORTEX_COMPARE_START') {
-      const { prompt, targetProvider } = event.data
-      const lastResponse = getLastClaudeResponse()
-
-      // Mount overlay immediately so we see the streaming
-      mountCompareOverlay(lastResponse, targetProvider)
-
-      chrome.runtime.sendMessage({
-        type:           'COMPARE_START',
-        prompt,
-        targetProvider,
-        claudeResponse: lastResponse,
-      }).catch(() => {})
     }
   })
 
-  // Listen for COMPARE_RESULT from background
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'COMPARE_RESULT') {
-      window.postMessage({
-        type:  'CORTEX_COMPARE_CHUNK',
-        chunk: msg.chunk,
-      }, '*')
-    }
-    if (msg.type === 'COMPARE_DONE') {
-      window.postMessage({
-        type: 'CORTEX_COMPARE_DONE',
-      }, '*')
-    }
-  })
-}
-
-function getLastClaudeResponse(): string {
-  // Find the last assistant message in the DOM
-  const msgs = document.querySelectorAll(
-    '.font-claude-message, [data-is-streaming="false"], [data-testid="assistant-message"]'
-  )
-  const last = msgs[msgs.length - 1]
-  return last?.textContent?.trim() ?? ''
+  // Compare: Claude can be both a source (its token bar has the Compare button)
+  // and a target (another LLM compares against it).
+  initCompareSource('claude')
+  initCompareTarget('claude')
 }
 
 function mountTokenBarWhenReady(): void {

@@ -1,36 +1,57 @@
-import { useState, useEffect, useRef } from 'react'
+/**
+ * CompareOverlay.tsx
+ * Full-screen split overlay mounted to document.body on claude.ai.
+ * Every div carries an explicit backgroundColor — claude.ai applies a global
+ * background-color to all divs which would make un-styled children white.
+ */
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Provider } from '../../shared/types'
 import { ComparePane } from './ComparePane'
 import { CompareToolbar } from './CompareToolbar'
 
 interface CompareOverlayProps {
-  claudeResponse:  string
+  sourceProvider:  Provider
+  sourceResponse:  string
   targetProvider:  Provider
   onClose:         () => void
   onContinueWith:  (provider: Provider) => void
 }
 
-export function CompareOverlay({
-  claudeResponse,
-  targetProvider,
-  onClose,
-  onContinueWith
-}: CompareOverlayProps) {
+const KEYFRAMES = `
+  @keyframes cortex-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  @keyframes cortex-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+`
+
+export function CompareOverlay({ sourceProvider, sourceResponse, targetProvider, onClose, onContinueWith }: CompareOverlayProps) {
   const [targetResponse, setTargetResponse] = useState('')
-  const [targetDone, setTargetDone] = useState(false)
-  const [targetTokens, setTargetTokens] = useState(0)
-  const [leftWidth, setLeftWidth] = useState(50)
-  const [dragging, setDragging] = useState(false)
-  
+  const [targetDone, setTargetDone]         = useState(false)
+  const [targetTokens, setTargetTokens]     = useState(0)
+  const [timedOut, setTimedOut]             = useState(false)
+  const [leftWidth, setLeftWidth]           = useState(50)
+  const [dragging, setDragging]             = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const draggingRef  = useRef(false)
+
+  // Watchdog: if the target tab never streams a response (e.g. its DOM
+  // selectors drifted), stop the infinite "Waiting…" state after 30s.
+  useEffect(() => {
+    const gotChunk  = targetResponse.length > 0
+    const deadline  = gotChunk ? 12_000 : 30_000   // shorter grace once streaming
+    if (targetDone) return
+    const timer = setTimeout(() => {
+      setTimedOut(true)
+      setTargetDone(true)
+    }, deadline)
+    return () => clearTimeout(timer)
+  }, [targetResponse, targetDone])
 
   useEffect(() => {
-    const handler = (event: MessageEvent) => {
-      if (event.data?.type === 'CORTEX_COMPARE_CHUNK') {
-        const chunk = event.data.chunk || ''
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'CORTEX_COMPARE_CHUNK') {
+        const chunk = (e.data.chunk as string) || ''
         setTargetResponse(prev => prev + chunk)
         setTargetTokens(prev => prev + Math.ceil(chunk.length / 4))
-      } else if (event.data?.type === 'CORTEX_COMPARE_DONE') {
+      } else if (e.data?.type === 'CORTEX_COMPARE_DONE') {
         setTargetDone(true)
       }
     }
@@ -38,82 +59,102 @@ export function CompareOverlay({
     return () => window.removeEventListener('message', handler)
   }, [])
 
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!dragging || !containerRef.current) return
+  const onMouseMove = useCallback((e: MouseEvent) => {
+    if (!draggingRef.current || !containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
-    const newWidth = ((e.clientX - rect.left) / rect.width) * 100
-    if (newWidth > 20 && newWidth < 80) {
-      setLeftWidth(newWidth)
-    }
-  }
+    const w = ((e.clientX - rect.left) / rect.width) * 100
+    if (w > 20 && w < 80) setLeftWidth(w)
+  }, [])
 
-  const handleMouseUp = () => setDragging(false)
+  const onMouseUp = useCallback(() => {
+    draggingRef.current = false
+    setDragging(false)
+  }, [])
 
   useEffect(() => {
     if (dragging) {
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseup', handleMouseUp)
+      draggingRef.current = true
+      window.addEventListener('mousemove', onMouseMove)
+      window.addEventListener('mouseup', onMouseUp)
     }
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
     }
-  }, [dragging])
+  }, [dragging, onMouseMove, onMouseUp])
 
-  // Mock costs for display
-  const claudeTokens = Math.ceil(claudeResponse.length / 4)
-  const claudeCost = 0.015 * (claudeTokens / 1000)
-  const targetCost = 0.005 * (targetTokens / 1000)
+  const sourceTokens = Math.ceil(sourceResponse.length / 4)
+  const sourceCost   = 0.015 * (sourceTokens / 1000)
+  const targetCost   = 0.005 * (targetTokens / 1000)
 
   return (
-    <div className="fixed inset-0 z-[999999] bg-black/75 flex items-center justify-center backdrop-blur-sm p-8 font-sans">
-      <div 
-        ref={containerRef}
-        className="w-[92vw] h-[85vh] bg-white dark:bg-gray-900 rounded-xl shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden ring-1 ring-white/10"
-      >
-        <CompareToolbar 
-          leftProvider="claude" 
-          rightProvider={targetProvider} 
-          onClose={onClose} 
-        />
-        
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Pane */}
-          <div style={{ width: `${leftWidth}%` }} className="flex-shrink-0">
-            <ComparePane
-              provider="claude"
-              response={claudeResponse}
-              streaming={false}
-              tokens={claudeTokens}
-              cost={claudeCost}
-              onCopy={() => navigator.clipboard.writeText(claudeResponse)}
-              onContinue={() => onContinueWith('claude')}
-            />
-          </div>
+    <>
+      <style>{KEYFRAMES}</style>
 
-          {/* Draggable Divider */}
-          <div 
-            className="relative w-1 bg-gray-200 dark:bg-gray-800 hover:bg-purple-500 dark:hover:bg-purple-500 cursor-col-resize transition-colors shrink-0 flex items-center justify-center group"
-            onMouseDown={(e) => { e.preventDefault(); setDragging(true) }}
-          >
-            <div className="absolute w-8 h-full z-10" /> {/* Hit area */}
-            <div className={`w-1 h-8 rounded-full bg-gray-400 group-hover:bg-white transition-colors ${dragging ? 'bg-white' : ''}`} />
-          </div>
+      {/* Backdrop */}
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 999999,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '32px',
+        backgroundColor: 'rgba(0,0,0,0.85)',
+        backdropFilter: 'blur(6px)',
+      }}>
+        {/* Dialog */}
+        <div ref={containerRef} style={{
+          width: '92vw', height: '85vh',
+          display: 'flex', flexDirection: 'column',
+          overflow: 'hidden', borderRadius: '14px',
+          backgroundColor: '#141414',
+          border: '1px solid rgba(255,255,255,0.09)',
+          boxShadow: '0 40px 100px rgba(0,0,0,0.75)',
+        }}>
+          <CompareToolbar leftProvider={sourceProvider} rightProvider={targetProvider} onClose={onClose} />
 
-          {/* Right Pane */}
-          <div style={{ width: `${100 - leftWidth}%` }} className="flex-shrink-0">
-            <ComparePane
-              provider={targetProvider}
-              response={targetResponse}
-              streaming={!targetDone}
-              tokens={targetTokens}
-              cost={targetCost}
-              onCopy={() => navigator.clipboard.writeText(targetResponse)}
-              onContinue={() => onContinueWith(targetProvider)}
-            />
+          {/* Pane row — explicit bg prevents white bleed-through */}
+          <div style={{
+            flex: 1, display: 'flex', overflow: 'hidden',
+            backgroundColor: '#1c1c1c',
+          }}>
+            {/* Left pane — source provider */}
+            <div style={{ width: `${leftWidth}%`, flexShrink: 0, overflow: 'hidden', backgroundColor: '#1c1c1c' }}>
+              <ComparePane
+                provider={sourceProvider} response={sourceResponse} streaming={false}
+                tokens={sourceTokens} cost={sourceCost}
+                onCopy={() => navigator.clipboard.writeText(sourceResponse)}
+                onContinue={() => onContinueWith(sourceProvider)}
+              />
+            </div>
+
+            {/* Draggable divider */}
+            <div
+              style={{
+                width: '1px', flexShrink: 0, cursor: 'col-resize', position: 'relative',
+                backgroundColor: dragging ? '#7C3AED' : 'rgba(255,255,255,0.09)',
+                transition: dragging ? 'none' : 'background-color 0.15s',
+              }}
+              onMouseDown={e => { e.preventDefault(); setDragging(true) }}
+              onMouseEnter={e => { if (!dragging) e.currentTarget.style.backgroundColor = 'rgba(124,58,237,0.6)' }}
+              onMouseLeave={e => { if (!dragging) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.09)' }}
+            >
+              <div style={{ position: 'absolute', inset: '0 -8px', cursor: 'col-resize' }} />
+            </div>
+
+            {/* Right pane — target AI */}
+            <div style={{ flex: 1, overflow: 'hidden', backgroundColor: '#1c1c1c' }}>
+              <ComparePane
+                provider={targetProvider}
+                response={timedOut && !targetResponse
+                  ? `⚠️ No response captured from ${targetProvider}.\n\nThe prompt was sent — open that tab to view it directly. Cortex couldn't read the reply automatically (the site's layout may have changed).`
+                  : targetResponse}
+                streaming={!targetDone}
+                tokens={targetTokens} cost={targetCost}
+                onCopy={() => navigator.clipboard.writeText(targetResponse)}
+                onContinue={() => onContinueWith(targetProvider)}
+              />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }

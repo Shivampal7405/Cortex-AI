@@ -1,7 +1,7 @@
 /**
  * llm.extractor.ts
  * LLM-powered memory extraction from conversation history.
- * Tries Claude → OpenAI → Gemini in priority order.
+ * Tries Groq → OpenAI → Gemini → NVIDIA NIM in priority order.
  * Falls back to regex when no API key is configured.
  * Passive mode: triggered every 5 messages via background alarm.
  */
@@ -39,143 +39,93 @@ function parseJSON(raw: string): MemoryJSON | null {
   }
 }
 
-async function getKeys(): Promise<{ claude: string | null; openai: string | null; gemini: string | null }> {
-  const result = await chrome.storage.local.get(['api_key_claude', 'api_key_openai', 'api_key_gemini'])
-
-  const keys = {
-    claude: (result['api_key_claude'] as string) || null,
-    openai: (result['api_key_openai'] as string) || null,
-    gemini: (result['api_key_gemini'] as string) || null,
-  }
-
-  // Trim whitespace (common paste error)
-  if (keys.claude) keys.claude = keys.claude.trim()
-  if (keys.openai) keys.openai = keys.openai.trim()
-  if (keys.gemini) keys.gemini = keys.gemini.trim()
-
-  // Minimal format validation
-  if (keys.claude && !keys.claude.startsWith('sk-ant-')) {
-    console.warn('[Cortex] Claude key format invalid — ignored')
-    keys.claude = null
-  }
-  if (keys.openai && !keys.openai.startsWith('sk-')) {
-    console.warn('[Cortex] OpenAI key format invalid — ignored')
-    keys.openai = null
-  }
-  if (keys.gemini && !keys.gemini.startsWith('AIza')) {
-    console.warn('[Cortex] Gemini key format invalid — ignored')
-    keys.gemini = null
-  }
-
-  console.log('[Cortex] API keys status:', {
-    claude: keys.claude ? 'SET' : 'MISSING',
-    openai: keys.openai ? 'SET' : 'MISSING',
-    gemini: keys.gemini ? 'SET' : 'MISSING',
-  })
-
-  return keys
+interface KeySet {
+  groq:   string | null
+  openai: string | null
+  gemini: string | null
+  nvidia: string | null
 }
 
-async function callClaude(key: string, body: string): Promise<MemoryJSON | null> {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body:    JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 2000, messages: [{ role: 'user', content: body }] }),
-  })
-  if (!r.ok) {
-    const err = await r.text().catch(() => 'unreadable')
-    console.error('[Cortex] Claude API error:', r.status, err.slice(0, 200))
-    return null
+async function getKeys(): Promise<KeySet> {
+  const r = await chrome.storage.local.get(['api_key_groq', 'api_key_openai', 'api_key_gemini', 'api_key_nvidia'])
+  const raw: KeySet = {
+    groq:   ((r['api_key_groq']   as string | undefined) ?? '').trim() || null,
+    openai: ((r['api_key_openai'] as string | undefined) ?? '').trim() || null,
+    gemini: ((r['api_key_gemini'] as string | undefined) ?? '').trim() || null,
+    nvidia: ((r['api_key_nvidia'] as string | undefined) ?? '').trim() || null,
   }
-  return parseJSON((await r.json())?.content?.[0]?.text ?? '')
+  if (raw.groq   && !raw.groq.startsWith('gsk_'))    { console.warn('[Cortex] Groq key format invalid');   raw.groq   = null }
+  if (raw.openai && !raw.openai.startsWith('sk-'))   { console.warn('[Cortex] OpenAI key format invalid'); raw.openai = null }
+  if (raw.gemini && !raw.gemini.startsWith('AIza'))  { console.warn('[Cortex] Gemini key format invalid'); raw.gemini = null }
+  if (raw.nvidia && !raw.nvidia.startsWith('nvapi-')){ console.warn('[Cortex] NVIDIA key format invalid'); raw.nvidia = null }
+  return raw
 }
 
-async function callOpenAI(key: string, body: string): Promise<MemoryJSON | null> {
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+async function callOpenAICompat(
+  url:   string,
+  model: string,
+  key:   string,
+  body:  string,
+  label: string
+): Promise<MemoryJSON | null> {
+  const r = await fetch(url, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body:    JSON.stringify({ model: 'gpt-4o-mini', max_tokens: 2000, messages: [{ role: 'user', content: body }] }),
+    body:    JSON.stringify({ model, max_tokens: 2000, messages: [{ role: 'user', content: body }] }),
   })
   if (!r.ok) {
     const err = await r.text().catch(() => 'unreadable')
-    console.error('[Cortex] OpenAI API error:', r.status, err.slice(0, 200))
+    console.error(`[Cortex] ${label} API error:`, r.status, err.slice(0, 200))
     return null
   }
-  return parseJSON((await r.json())?.choices?.[0]?.message?.content ?? '')
+  return parseJSON((await r.json() as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ?? '')
 }
 
-async function callGemini(
-  apiKey:  string,
-  content: string
-): Promise<MemoryJSON | null> {
-  console.log('[Cortex] Calling Gemini API...')
-
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta` +
-    `/models/gemini-2.0-flash:generateContent?key=${apiKey}`
-
+async function callGemini(apiKey: string, content: string): Promise<MemoryJSON | null> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
   let res: Response
   try {
     res = await fetch(url, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{
-          parts: [{ text: content }]
-        }],
-        generationConfig: {
-          maxOutputTokens:  2000,
-          temperature:      0.1,
-          responseMimeType: 'application/json',
-        },
+        contents: [{ parts: [{ text: content }] }],
+        generationConfig: { maxOutputTokens: 2000, temperature: 0.1, responseMimeType: 'application/json' },
       }),
     })
   } catch (err) {
     console.error('[Cortex] Gemini network error:', err)
     return null
   }
-
   if (!res.ok) {
     const errText = await res.text().catch(() => 'unreadable')
-    console.error(
-      '[Cortex] Gemini API error:',
-      res.status, errText
-    )
+    console.error('[Cortex] Gemini API error:', res.status, errText)
     return null
   }
-
-  let data: unknown
-  try {
-    data = await res.json()
-  } catch {
-    console.error('[Cortex] Gemini response not valid JSON')
-    return null
-  }
-
-  const text = (data as {
-    candidates?: Array<{
-      content?: { parts?: Array<{ text?: string }> }
-    }>
-  })?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-
-  if (!text) {
-    console.error('[Cortex] Gemini returned empty text:', data)
-    return null
-  }
-
-  console.log(
-    '[Cortex] Gemini response preview:',
-    text.slice(0, 100)
-  )
-  return parseJSON(text)
+  const data = await res.json().catch(() => null) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> } | null
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+  return text ? parseJSON(text) : null
 }
 
 export async function extractWithLLM(conversationText: string): Promise<MemoryJSON | null> {
   const keys = await getKeys()
   const body = PROMPT_BASE + truncate(conversationText)
-  if (keys.claude) { const r = await callClaude(keys.claude, body); if (r) return r }
-  if (keys.openai) { const r = await callOpenAI(keys.openai, body); if (r) return r }
-  if (keys.gemini) { const r = await callGemini(keys.gemini, body); if (r) return r }
+  if (keys.groq) {
+    const r = await callOpenAICompat('https://api.groq.com/openai/v1/chat/completions', 'llama-3.3-70b-versatile', keys.groq, body, 'Groq')
+    if (r) return r
+  }
+  if (keys.openai) {
+    const r = await callOpenAICompat('https://api.openai.com/v1/chat/completions', 'gpt-4o-mini', keys.openai, body, 'OpenAI')
+    if (r) return r
+  }
+  if (keys.gemini) {
+    const r = await callGemini(keys.gemini, body)
+    if (r) return r
+  }
+  if (keys.nvidia) {
+    const r = await callOpenAICompat('https://integrate.api.nvidia.com/v1/chat/completions', 'meta/llama-3.1-8b-instruct', keys.nvidia, body, 'NVIDIA')
+    if (r) return r
+  }
   return null
 }
 

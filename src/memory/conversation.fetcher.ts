@@ -106,14 +106,21 @@ async function fetchInProviderTab(
   }
 
   const tabs = await chrome.tabs.query({ url: urlMap[provider] })
-  if (!tabs[0]?.id) {
+  if (tabs.length === 0) {
     console.warn(`[Cortex] No active tab for ${provider} — falling back to cache`)
     return []
   }
 
+  // Prefer the currently active tab, then most-recently accessed
+  const tab = [...tabs].sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1
+    return (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0)
+  })[0]
+  if (!tab?.id) return []
+
   try {
     const results = await chrome.scripting.executeScript({
-      target: { tabId: tabs[0].id },
+      target: { tabId: tab.id },
       world:  'MAIN',
       func:   fetchConversationFromPage,
       args:   [provider],
@@ -133,6 +140,18 @@ async function fetchInProviderTab(
 export async function forceFreshHistory(
   provider: Provider
 ): Promise<ChatMessage[]> {
+  // Claude: direct API fetch is the most accurate — uses stored orgId + convId
+  if (provider === 'claude') {
+    const convId = await getActiveConvId('claude')
+    if (convId) {
+      const fresh = await fetchClaudeHistory(convId)
+      if (fresh.length > 0) {
+        await chrome.storage.local.set({ claude_conv_history: fresh })
+        return fresh
+      }
+    }
+  }
+
   const fresh = await fetchInProviderTab(provider)
   if (fresh.length > 0) {
     await chrome.storage.local.set({ [`${provider}_conv_history`]: fresh })

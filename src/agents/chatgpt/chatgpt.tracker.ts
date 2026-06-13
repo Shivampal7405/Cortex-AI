@@ -5,6 +5,10 @@
  * Zero UI. Runs silently at document_idle.
  */
 
+import { emitActivity } from '../shared/activity'
+import { mountCompareLauncher } from '../../content-ui/compare-overlay/mountLauncher'
+import { initCompareSource, initCompareTarget } from '../../content-ui/compare-overlay/compareHost'
+
 export {}
 
 // Storage keys
@@ -59,6 +63,7 @@ function interceptConversationFetch(): void {
         await chrome.storage.local.set({
           [STORAGE_KEYS.history]: messages,
         })
+        emitActivity('chatgpt', 'gpt-4o', messages)
 
         console.log(
           '[Cortex:ChatGPT] History cached:',
@@ -139,71 +144,6 @@ function watchURLChanges(): void {
   })
 }
 
-async function checkAndHandleCompareMode(
-  responseText: string,
-  isDone: boolean
-): Promise<boolean> {
-  const storage = await chrome.storage.local.get('compare_mode')
-  const mode = storage['compare_mode'] as {
-    active: boolean
-    target: string
-  } | null
-
-  const thisProvider = 'chatgpt'
-
-  if (!mode?.active || mode.target !== thisProvider) return false
-
-  chrome.runtime.sendMessage({
-    type:     'COMPARE_RESULT',
-    provider: thisProvider,
-    chunk:    responseText,
-    done:     isDone,
-  }).catch(() => {})
-
-  if (isDone) {
-    chrome.storage.local.remove('compare_mode')
-  }
-  return true
-}
-
-let compareObserver: MutationObserver | null = null
-
-function watchForCompareMode(): void {
-  // We use DOM polling since fetching SSE text is complex
-  setInterval(async () => {
-    const storage = await chrome.storage.local.get('compare_mode')
-    const mode = storage['compare_mode'] as { active: boolean; target: string } | null
-    if (mode?.active && mode.target === 'chatgpt') {
-      if (!compareObserver) {
-        let lastSentLength = 0
-        compareObserver = new MutationObserver(() => {
-          const msgs = document.querySelectorAll('.markdown.prose, [data-message-author-role="assistant"]')
-          const lastMsg = msgs[msgs.length - 1]
-          if (lastMsg) {
-            const text = lastMsg.textContent || ''
-            const newText = text.slice(lastSentLength)
-            if (newText) {
-              lastSentLength = text.length
-              const isStreaming = document.querySelector('.result-streaming') !== null
-              checkAndHandleCompareMode(newText, false)
-              
-              if (!isStreaming) {
-                // Done!
-                setTimeout(() => {
-                  checkAndHandleCompareMode('', true)
-                }, 500)
-                compareObserver?.disconnect()
-                compareObserver = null
-              }
-            }
-          }
-        })
-        compareObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
-      }
-    }
-  }, 1000)
-}
-
 // Entry point
 function init(): void {
   console.log('[Cortex:ChatGPT] Tracker initialized')
@@ -218,7 +158,10 @@ function init(): void {
   // Watch for navigation to new conversations
   watchURLChanges()
 
-  watchForCompareMode()
+  // Cross-LLM compare: source (floating launcher) + target (response streamer)
+  mountCompareLauncher('chatgpt')
+  initCompareSource('chatgpt')
+  initCompareTarget('chatgpt')
 }
 
 init()

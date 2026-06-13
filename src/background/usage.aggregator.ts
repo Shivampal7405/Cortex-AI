@@ -59,17 +59,25 @@ export async function handleUsageUpdate(
   // Persist to storage
   await chrome.storage.local.set({ 'provider:claude': state })
 
-  // Record snapshot for heatmap history
-  const today = new Date().toISOString().slice(0, 10)
-  recordSnapshot({
-    id:        `claude_${Date.now()}`,
-    provider:  'claude',
-    pct:       claudeUsage.pct_5hr,
-    tokens:    claudeUsage.tokens_5hr,
-    cost_usd:  0,
-    date:      today,
-    timestamp: Date.now(),
-  }).catch(err => console.warn('[Cortex] recordSnapshot failed:', err))
+  // Record snapshot for heatmap history.
+  // Use the strongest activity signal available: rate-limit %, context fill %,
+  // or a visible floor when any tokens were used — so active days always light up
+  // even when the /usage endpoint reports 0% (free plans, API field changes).
+  const today      = new Date().toISOString().slice(0, 10)
+  const ctxPct     = raw.context_pct ?? 0
+  const hasTokens  = (raw.total_tokens ?? 0) > 0
+  const activityPct = Math.max(claudeUsage.pct_5hr, ctxPct, hasTokens ? 8 : 0)
+  if (activityPct > 0) {
+    recordSnapshot({
+      id:        `claude_${Date.now()}`,
+      provider:  'claude',
+      pct:       activityPct,
+      tokens:    raw.total_tokens ?? claudeUsage.tokens_5hr,
+      cost_usd:  0,
+      date:      today,
+      timestamp: Date.now(),
+    }).catch(err => console.warn('[Cortex] recordSnapshot failed:', err))
+  }
 
   // Fetch existing TokenBarState to preserve total_tokens if this is just an SSE update
   const existingRes = await chrome.storage.local.get('tokenBarState:claude')
@@ -127,14 +135,30 @@ async function handleSimpleUpdate(
     model,
   }
 
+  // Persist to storage for newly mounted UI elements
+  await chrome.storage.local.set({ [`tokenBarState:${provider}`]: tokenBarState })
+
+  // Record a heatmap snapshot for this provider — this is the only place
+  // ChatGPT / Gemini / Grok activity ever reaches the history store.
+  const today       = new Date().toISOString().slice(0, 10)
+  const activityPct = totalTokens > 0 ? Math.max(tokenBarState.context_pct, 8) : 0
+  if (activityPct > 0) {
+    await recordSnapshot({
+      id:        `${provider}_${Date.now()}`,
+      provider,
+      pct:       activityPct,
+      tokens:    totalTokens,
+      cost_usd:  tokenBarState.cost_session_usd,
+      date:      today,
+      timestamp: Date.now(),
+    }).catch(err => console.warn('[Cortex] recordSnapshot failed:', err))
+  }
+
   const urlMap: Record<string, string> = {
     chatgpt: 'https://chatgpt.com/*',
     gemini:  'https://gemini.google.com/*',
-    grok:    'https://grok.com/*',
+    grok:    'https://x.com/*',
   }
-
-  // Persist to storage for newly mounted UI elements
-  await chrome.storage.local.set({ [`tokenBarState:${provider}`]: tokenBarState })
 
   const urlPattern = urlMap[provider]
   if (!urlPattern) return
