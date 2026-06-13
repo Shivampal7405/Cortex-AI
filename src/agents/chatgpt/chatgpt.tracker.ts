@@ -7,7 +7,7 @@
 
 import { emitActivity } from '../shared/activity'
 import { mountCompareLauncher } from '../../content-ui/compare-overlay/mountLauncher'
-import { initCompareSource, initCompareTarget } from '../../content-ui/compare-overlay/compareHost'
+import { initCompareSource } from '../../content-ui/compare-overlay/compareHost'
 
 export {}
 
@@ -161,7 +161,6 @@ function init(): void {
   // Cross-LLM compare: source (floating launcher) + target (response streamer)
   mountCompareLauncher('chatgpt')
   initCompareSource('chatgpt')
-  initCompareTarget('chatgpt')
 }
 
 init()

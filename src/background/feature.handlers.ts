@@ -6,6 +6,7 @@
  */
 
 import type { Provider, SavedPrompt } from '../shared/types'
+import { streamTargetResponse } from './compare.scraper'
 
 const PROMPTS_KEY = 'cortex_prompts'
 
@@ -99,6 +100,9 @@ export async function handleCompareStart(
     args:   [prompt, targetProvider],
     world:  'MAIN',
   }).catch(err => console.warn('[Cortex] Compare inject failed:', err))
+
+  // Scrape the target tab from the background - independent of its content script.
+  void streamTargetResponse(targetTabId, sourceTabId, targetProvider)
 }
 
 export async function handleCompareResult(

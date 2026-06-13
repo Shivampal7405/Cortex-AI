@@ -10,7 +10,7 @@
  */
 
 import { mountTokenBar } from '../../content-ui/shared/mount'
-import { initCompareSource, initCompareTarget } from '../../content-ui/compare-overlay/compareHost'
+import { initCompareSource } from '../../content-ui/compare-overlay/compareHost'
 
 // ─── Silence "Extension context invalidated" noise ────────
 // When the extension reloads, the old content script keeps running in the tab.
@@ -337,7 +337,6 @@ async function init(): Promise<void> {
   // Compare: Claude can be both a source (its token bar has the Compare button)
   // and a target (another LLM compares against it).
   initCompareSource('claude')
-  initCompareTarget('claude')
 }
 
 function mountTokenBarWhenReady(): void {
