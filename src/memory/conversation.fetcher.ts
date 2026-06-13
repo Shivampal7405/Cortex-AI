@@ -102,7 +102,7 @@ async function fetchInProviderTab(
     claude:  'https://claude.ai/*',
     chatgpt: 'https://chatgpt.com/*',
     gemini:  'https://gemini.google.com/*',
-    grok:    'https://x.com/*',
+    grok:    'https://grok.com/*',
   }
 
   const tabs = await chrome.tabs.query({ url: urlMap[provider] })

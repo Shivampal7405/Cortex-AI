@@ -3,7 +3,7 @@
   "name": "Cortex — AI Co-pilot",
   "version": "1.1.0",
   "description": "Live token tracking, model switching, and shared memory inside Claude, ChatGPT, Gemini, and Grok.",
-  "permissions": ["storage", "alarms", "notifications", "tabs", "scripting", "https://claude.ai/*", "https://chatgpt.com/*", "https://gemini.google.com/*", "https://x.com/*", "https://api.groq.com/*", "https://api.openai.com/*", "https://generativelanguage.googleapis.com/*", "https://integrate.api.nvidia.com/*"],
+  "permissions": ["storage", "alarms", "notifications", "tabs", "scripting", "https://claude.ai/*", "https://chatgpt.com/*", "https://gemini.google.com/*", "https://x.com/*", "https://grok.com/*", "https://api.groq.com/*", "https://api.openai.com/*", "https://generativelanguage.googleapis.com/*", "https://integrate.api.nvidia.com/*"],
   "background": {
     "scripts": ["background/background.js"],
     "type": "module"
@@ -42,7 +42,7 @@
       "all_frames": false
     },
     {
-      "matches": ["https://x.com/*"],
+      "matches": ["https://x.com/*", "https://grok.com/*"],
       "js": ["agents/grok/grok.content.js"],
       "run_at": "document_start",
       "all_frames": false

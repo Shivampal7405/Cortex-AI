@@ -9,6 +9,7 @@
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
     "https://x.com/*",
+    "https://grok.com/*",
     "https://api.groq.com/*",
     "https://api.openai.com/*",
     "https://generativelanguage.googleapis.com/*",

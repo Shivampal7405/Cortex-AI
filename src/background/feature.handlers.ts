@@ -14,13 +14,13 @@ const TAB_URL_PATTERNS: Record<string, string> = {
   claude:  'https://claude.ai/*',
   chatgpt: 'https://chatgpt.com/*',
   gemini:  'https://gemini.google.com/*',
-  grok:    'https://x.com/*',
+  grok:    'https://grok.com/*',
 }
 
 const OPEN_URLS: Record<string, string> = {
   chatgpt: 'https://chatgpt.com/',
   gemini:  'https://gemini.google.com/',
-  grok:    'https://x.com/i/grok',
+  grok:    'https://grok.com/',
 }
 
 // Injected into the compare target tab (MAIN world) — must stay self-contained

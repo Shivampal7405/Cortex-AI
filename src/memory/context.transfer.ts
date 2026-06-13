@@ -19,7 +19,7 @@ const TARGET_URLS: Record<Provider, string> = {
   claude:  'https://claude.ai/new',
   chatgpt: 'https://chatgpt.com/',
   gemini:  'https://gemini.google.com/',
-  grok:    'https://x.com/i/grok',
+  grok:    'https://grok.com/',
 }
 
 const INPUT_SELECTORS: Record<Provider, string[]> = {

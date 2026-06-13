@@ -157,7 +157,7 @@ async function handleSimpleUpdate(
   const urlMap: Record<string, string> = {
     chatgpt: 'https://chatgpt.com/*',
     gemini:  'https://gemini.google.com/*',
-    grok:    'https://x.com/*',
+    grok:    'https://grok.com/*',
   }
 
   const urlPattern = urlMap[provider]
