@@ -69,7 +69,7 @@ export async function handleUsageUpdate(
   const activityPct = Math.max(claudeUsage.pct_5hr, ctxPct, hasTokens ? 8 : 0)
   if (activityPct > 0) {
     recordSnapshot({
-      id:        `claude_${Date.now()}`,
+      id:        `claude_${today}`,       // one record per provider per day
       provider:  'claude',
       pct:       activityPct,
       tokens:    raw.total_tokens ?? claudeUsage.tokens_5hr,
@@ -144,7 +144,7 @@ async function handleSimpleUpdate(
   const activityPct = totalTokens > 0 ? Math.max(tokenBarState.context_pct, 8) : 0
   if (activityPct > 0) {
     await recordSnapshot({
-      id:        `${provider}_${Date.now()}`,
+      id:        `${provider}_${today}`,   // one record per provider per day
       provider,
       pct:       activityPct,
       tokens:    totalTokens,

@@ -76,18 +76,19 @@ export async function streamTargetResponse(
     const scrape = await scrapeOnce(tabId, selectors)
     if (!scrape) break
 
-    // Selector text (the assistant message) is cleanest; ignore it if it is just
-    // the echoed prompt. Otherwise use page-text delta with the prompt removed.
-    const selText  = scrape.text && scrape.text !== prompt ? scrape.text : ''
-    let   bodyText = scrape.body.length > baseline ? scrape.body.slice(baseline).trim() : ''
+    // Strip UI noise that any provider might prepend to their responses.
+    const stripNoise = (t: string): string =>
+      t.replace(/^Gemini\s+said[\s:.]*\n*/i, '')
+       .replace(/^(Gemini|ChatGPT|Grok|Claude)[\s:.]+/i, '')
+       .replace(/⇄\s*Compare/g, '')
+       .replace(/^\s*Compare\s*/im, '')
+       .trim()
+
+    // Selector text is cleanest — ignore only if it exactly equals the echoed prompt.
+    let selText  = scrape.text && scrape.text !== prompt ? stripNoise(scrape.text) : ''
+    let bodyText = scrape.body.length > baseline ? scrape.body.slice(baseline).trim() : ''
     if (bodyText && prompt) bodyText = bodyText.replace(prompt, '').trim()
-    // Strip UI noise so it is never mistaken for a real reply.
-    if (bodyText) bodyText = bodyText
-      .replace(/⇄\s*Compare/g, '')
-      .replace(/^\s*Compare\s*/i, '')
-      .replace(/^Gemini\s+said[\s:.]*/i, '')
-      .replace(/^Gemini[\s:.]*/i, '')
-      .trim()
+    if (bodyText) bodyText = stripNoise(bodyText)
 
     let current = ''
     if (mode === 'sel')        current = selText
@@ -102,8 +103,9 @@ export async function streamTargetResponse(
       lastSent = current.length
       chrome.tabs.sendMessage(sourceTabId, { type: 'COMPARE_RESULT', chunk, provider }).catch(() => {})
       stable = 0
-    } else if (lastSent > 50 && ++stable >= 6) {
-      // Require >50 chars before declaring done — avoids quitting on a UI label.
+    } else if (lastSent > 50 && ++stable >= 10) {
+      // Require >50 chars AND 10 stable ticks (4s) before declaring done.
+      // This avoids quitting on a UI label or mid-stream pause.
       break
     }
   }

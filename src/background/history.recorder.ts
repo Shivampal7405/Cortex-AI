@@ -33,8 +33,15 @@ async function getDB() {
 }
 
 export async function recordSnapshot(snapshot: UsageSnapshot): Promise<void> {
-  const db = await getDB()
-  await db.put(STORE, snapshot)
+  const db       = await getDB()
+  // Keep only the highest-activity record per provider per day.
+  // Using provider_date as ID means db.put is an upsert; checking first
+  // ensures we never overwrite a higher value with a lower one from a new session.
+  const existing = await db.get(STORE, snapshot.id) as UsageSnapshot | undefined
+  if (!existing || existing.pct < snapshot.pct) {
+    await db.put(STORE, snapshot)
+  }
+  // Always accumulate monthly cost regardless of pct comparison.
   await recordMonthlyCost(snapshot.cost_usd)
 }
 

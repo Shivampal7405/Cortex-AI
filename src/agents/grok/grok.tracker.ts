@@ -206,6 +206,15 @@ function watchURLChanges(): void {
   }).observe(document.body, { childList: true, subtree: true })
 }
 
+async function emitCachedActivity(): Promise<void> {
+  if (!chrome.runtime?.id) return
+  try {
+    const stored = await chrome.storage.local.get(STORAGE_KEYS.history)
+    const cached = stored[STORAGE_KEYS.history] as ChatMessage[] | undefined
+    if (cached?.length) emitActivity('grok', 'grok-3', cached, true)
+  } catch { /* ignore */ }
+}
+
 function init(): void {
   console.log('[Cortex:Grok] Tracker initialized')
   interceptGrokFetch()
@@ -213,6 +222,9 @@ function init(): void {
   if (convId) saveConversationId(convId)
   setTimeout(() => scrapeHistoryFromDOM(), 2000)
   watchURLChanges()
+
+  // Record activity from cached history so return visits appear in heatmap.
+  void emitCachedActivity()
 
   // Cross-LLM compare: source (floating launcher) + target (response streamer)
   mountCompareLauncher('grok')

@@ -223,6 +223,15 @@ function watchForNewMessages(): void {
   }).observe(document.body, { childList: true, subtree: true, characterData: true })
 }
 
+async function emitCachedActivity(): Promise<void> {
+  if (!chrome.runtime?.id) return
+  try {
+    const stored = await chrome.storage.local.get(STORAGE_KEYS.history)
+    const cached = stored[STORAGE_KEYS.history] as ChatMessage[] | undefined
+    if (cached?.length) emitActivity('gemini', 'gemini-2.0-flash', cached, true)
+  } catch { /* ignore */ }
+}
+
 function init(): void {
   console.log('[Cortex:Gemini] Tracker initialized')
   interceptGeminiFetch()
@@ -231,6 +240,9 @@ function init(): void {
   setTimeout(() => scrapeHistoryFromDOM(), 2000)
   watchURLChanges()
   watchForNewMessages()
+
+  // Record activity from cached history so return visits appear in heatmap.
+  void emitCachedActivity()
 
   // Cross-LLM compare: source (floating launcher) + target (response streamer)
   mountCompareLauncher('gemini')
